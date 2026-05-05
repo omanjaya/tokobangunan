@@ -49,8 +49,21 @@ func (h *OnboardingHandler) Index(c echo.Context) error {
 	return c.Redirect(http.StatusSeeOther, "/onboarding/step1")
 }
 
+// guardDone redirect ke /dashboard kalau onboarding sudah selesai.
+// Mencegah user direct-visit /onboarding/stepN setelah marked done.
+func (h *OnboardingHandler) guardDone(c echo.Context) error {
+	done, _ := h.appSetting.IsOnboardingDone(c.Request().Context())
+	if done {
+		return c.Redirect(http.StatusSeeOther, "/dashboard")
+	}
+	return nil
+}
+
 // Step1 GET — form info toko.
 func (h *OnboardingHandler) Step1(c echo.Context) error {
+	if r := h.guardDone(c); r != nil {
+		return r
+	}
 	info, _ := h.appSetting.TokoInfo(c.Request().Context())
 	if info == nil {
 		info = &domain.TokoInfo{}
@@ -65,6 +78,9 @@ func (h *OnboardingHandler) Step1(c echo.Context) error {
 
 // Step1Submit POST — simpan toko_info, lanjut step2.
 func (h *OnboardingHandler) Step1Submit(c echo.Context) error {
+	if r := h.guardDone(c); r != nil {
+		return r
+	}
 	info := &domain.TokoInfo{
 		Nama:        strings.TrimSpace(c.FormValue("nama")),
 		Alamat:      strings.TrimSpace(c.FormValue("alamat")),
@@ -90,6 +106,9 @@ func (h *OnboardingHandler) Step1Submit(c echo.Context) error {
 
 // Step2 GET — list gudang.
 func (h *OnboardingHandler) Step2(c echo.Context) error {
+	if r := h.guardDone(c); r != nil {
+		return r
+	}
 	list, err := h.gudang.List(c.Request().Context(), true)
 	if err != nil {
 		return err
@@ -104,6 +123,9 @@ func (h *OnboardingHandler) Step2(c echo.Context) error {
 
 // Step2Submit POST — bulk update aktif/nonaktif + rename gudang.
 func (h *OnboardingHandler) Step2Submit(c echo.Context) error {
+	if r := h.guardDone(c); r != nil {
+		return r
+	}
 	ctx := c.Request().Context()
 	list, err := h.gudang.List(ctx, true)
 	if err != nil {
@@ -137,6 +159,9 @@ func (h *OnboardingHandler) Step2Submit(c echo.Context) error {
 
 // Step3 GET — bulk import produk via CSV.
 func (h *OnboardingHandler) Step3(c echo.Context) error {
+	if r := h.guardDone(c); r != nil {
+		return r
+	}
 	props := onboardingview.Step3Props{
 		CSRF:  csrfToken(c),
 		Steps: makeSteps(3),
@@ -146,6 +171,9 @@ func (h *OnboardingHandler) Step3(c echo.Context) error {
 
 // Step3Submit POST — parse CSV.
 func (h *OnboardingHandler) Step3Submit(c echo.Context) error {
+	if r := h.guardDone(c); r != nil {
+		return r
+	}
 	ctx := c.Request().Context()
 	if c.FormValue("skip") == "1" {
 		return c.Redirect(http.StatusSeeOther, "/onboarding/step4")
@@ -166,6 +194,9 @@ func (h *OnboardingHandler) Step3Submit(c echo.Context) error {
 
 // Step4 GET — buat user kasir.
 func (h *OnboardingHandler) Step4(c echo.Context) error {
+	if r := h.guardDone(c); r != nil {
+		return r
+	}
 	list, err := h.gudang.List(c.Request().Context(), false)
 	if err != nil {
 		return err
@@ -180,6 +211,9 @@ func (h *OnboardingHandler) Step4(c echo.Context) error {
 
 // Step4Submit POST — buat user kasir per gudang.
 func (h *OnboardingHandler) Step4Submit(c echo.Context) error {
+	if r := h.guardDone(c); r != nil {
+		return r
+	}
 	ctx := c.Request().Context()
 	if c.FormValue("skip") == "1" {
 		return h.finalize(c)
@@ -228,6 +262,9 @@ func (h *OnboardingHandler) Step4Submit(c echo.Context) error {
 
 // Step4Done POST /onboarding/step4/done - mark done dari step4.
 func (h *OnboardingHandler) Step4Done(c echo.Context) error {
+	if r := h.guardDone(c); r != nil {
+		return r
+	}
 	return h.finalize(c)
 }
 

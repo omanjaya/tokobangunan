@@ -143,13 +143,13 @@ templ POSCard(p POSProps) {
           }
         </div>
 
-        <div class="card p-3">
+        <div class="card p-3 min-h-[28rem]">
           <div x-show="loading" x-cloak class="text-center py-8 text-sm text-slate-400">Memuat…</div>
           <div x-show="!loading && filtered().length === 0" x-cloak class="text-center py-8 text-sm text-slate-400">
             Tidak ada produk.
           </div>
           <div x-show="!loading && filtered().length > 0" x-cloak
-               class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+               class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 content-start">
             <template x-for="p in filtered()" :key="p.id">
               <button type="button" @click="addByProduk(p)"
                       class="text-left bg-white border border-slate-200 rounded-lg p-3 hover:border-brand-400 hover:shadow-sm active:scale-95 transition min-h-[7rem] flex flex-col gap-1.5"

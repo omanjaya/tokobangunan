@@ -16,14 +16,15 @@ templ AppShell(props AppShellProps) {
       <link rel="icon" type="image/svg+xml" href="/static/icon/favicon.svg"/>
       <title>{ props.Title } - Tokobangunan</title>
       <link rel="stylesheet" href="/static/css/app.css"/>
+      <style>[x-cloak]{display:none !important}</style>
       <script src="/static/js/htmx.min.js" defer></script>
-      <script src="/static/js/uuid.js" defer></script>
-      <script src="/static/js/sync.js" defer></script>
-      <script src="/static/js/app.js" defer></script>
+      <script src="/static/js/uuid.min.js" defer></script>
+      <script src="/static/js/sync.min.js" defer></script>
+      <script src="/static/js/app.min.js" defer></script>
       <script src="/static/js/alpine.min.js" defer></script>
-      <script src="/static/js/penjualan-offline.js" defer></script>
-      <script src="/static/js/barcode_scanner.js" defer></script>
-      <script src="/static/js/sw-register.js" defer></script>
+      <script src="/static/js/penjualan-offline.min.js" defer></script>
+      <script src="/static/js/barcode_scanner.min.js" defer></script>
+      <script src="/static/js/sw-register.min.js" defer></script>
     </head>
     <body
       class="bg-slate-50 text-slate-900 antialiased"

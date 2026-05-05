@@ -103,6 +103,10 @@ func (h *PortalHandler) DownloadPDF(c echo.Context) error {
 	if pj.MitraID != t.MitraID {
 		return echo.NewHTTPError(http.StatusForbidden, "akses ditolak")
 	}
+	// Invoice yang dibatalkan tidak boleh diunduh via portal.
+	if pj.StatusBayar == domain.StatusBayarDibatalkan {
+		return echo.NewHTTPError(http.StatusNotFound, "Invoice ini sudah dibatalkan")
+	}
 	mitra, err := h.mitra.Get(ctx, pj.MitraID)
 	if err != nil {
 		return err

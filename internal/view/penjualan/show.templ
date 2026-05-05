@@ -187,43 +187,47 @@ templ Show(p ShowProps) {
         @icon.Plus(14, "")
         <span>Buat Serupa</span>
       }
-      <div class="relative" x-data="{ open: false }">
-        <button @click="open = !open" type="button" class="btn-primary btn-md">
-          @icon.Printer(16, "")
-          <span>Cetak</span>
-          @icon.ChevronDown(14, "")
-        </button>
-        <div x-show="open" x-cloak @click.outside="open = false"
-             class="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-lg shadow-lg z-20">
-          <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/pdf?copy=asli", p.Penjualan.ID)) }
-             target="_blank" class="block px-3 py-2 text-sm hover:bg-brand-50">
-             Kwitansi A5 — ASLI
-          </a>
-          <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/pdf?copy=tembusan", p.Penjualan.ID)) }
-             target="_blank" class="block px-3 py-2 text-sm hover:bg-brand-50">
-             Kwitansi A5 — TEMBUSAN
-          </a>
-          if p.Penjualan.PPNAmount > 0 {
-            <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/faktur", p.Penjualan.ID)) }
-               target="_blank" class="block px-3 py-2 text-sm hover:bg-brand-50 border-t">
-               Faktur Pajak (PPN)
+      if p.Penjualan.StatusBayar != domain.StatusBayarDibatalkan {
+        <div class="relative" x-data="{ open: false }">
+          <button @click="open = !open" type="button" class="btn-primary btn-md">
+            @icon.Printer(16, "")
+            <span>Cetak</span>
+            @icon.ChevronDown(14, "")
+          </button>
+          <div x-show="open" x-cloak @click.outside="open = false"
+               class="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-lg shadow-lg z-20">
+            <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/pdf?copy=asli", p.Penjualan.ID)) }
+               target="_blank" class="block px-3 py-2 text-sm hover:bg-brand-50">
+               Kwitansi A5 — ASLI
             </a>
-          }
-          <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/escp", p.Penjualan.ID)) }
-             class="block px-3 py-2 text-sm hover:bg-brand-50">
-             Dot Matrix (ESC/P)
-          </a>
-          <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/58mm", p.Penjualan.ID)) }
-             class="block px-3 py-2 text-sm hover:bg-brand-50">
-             Thermal 58mm
-          </a>
-          <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/80mm", p.Penjualan.ID)) }
-             class="block px-3 py-2 text-sm hover:bg-brand-50">
-             Thermal 80mm
-          </a>
+            <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/pdf?copy=tembusan", p.Penjualan.ID)) }
+               target="_blank" class="block px-3 py-2 text-sm hover:bg-brand-50">
+               Kwitansi A5 — TEMBUSAN
+            </a>
+            if p.Penjualan.PPNAmount > 0 {
+              <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/faktur", p.Penjualan.ID)) }
+                 target="_blank" class="block px-3 py-2 text-sm hover:bg-brand-50 border-t">
+                 Faktur Pajak (PPN)
+              </a>
+            }
+            <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/escp", p.Penjualan.ID)) }
+               class="block px-3 py-2 text-sm hover:bg-brand-50">
+               Dot Matrix (ESC/P)
+            </a>
+            <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/58mm", p.Penjualan.ID)) }
+               class="block px-3 py-2 text-sm hover:bg-brand-50">
+               Thermal 58mm
+            </a>
+            <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/80mm", p.Penjualan.ID)) }
+               class="block px-3 py-2 text-sm hover:bg-brand-50">
+               Thermal 80mm
+            </a>
+          </div>
         </div>
-      </div>
-      @shareActions(p.Penjualan.ID, mitraKontak(p.Mitra), mitraEmail(p.Mitra))
+        @shareActions(p.Penjualan.ID, mitraKontak(p.Mitra), mitraEmail(p.Mitra))
+      } else {
+        <span class="text-xs text-slate-500 self-center">Invoice dibatalkan, tidak bisa dicetak atau dikirim.</span>
+      }
     }
 
     if p.Penjualan.StatusBayar == domain.StatusBayarDibatalkan {

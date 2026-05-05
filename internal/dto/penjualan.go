@@ -15,7 +15,7 @@ type PenjualanItemInput struct {
 // Diskon dalam Rupiah utuh.
 type PenjualanCreateInput struct {
 	Tanggal     string               `form:"tanggal" validate:"required,datetime=2006-01-02"`
-	MitraID     int64                `form:"mitra_id" validate:"required,min=1"`
+	MitraID     int64                `form:"mitra_id" validate:"gte=0"` // 0 = fallback ke mitra ECERAN
 	GudangID    int64                `form:"gudang_id" validate:"required,min=1"`
 	Items       []PenjualanItemInput `validate:"required,min=1,dive"`
 	Diskon      int64                `form:"diskon" validate:"min=0"`

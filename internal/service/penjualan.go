@@ -75,6 +75,14 @@ func (s *PenjualanService) Create(
 		return nil, fmt.Errorf("parse tanggal: %w", err)
 	}
 
+	// MitraID == 0 berarti POS walk-in: resolve ke mitra default "ECERAN".
+	if in.MitraID == 0 {
+		eceran, err := s.mitra.GetByKode(ctx, "ECERAN")
+		if err != nil {
+			return nil, fmt.Errorf("eceran mitra not found: %w", err)
+		}
+		in.MitraID = eceran.ID
+	}
 	mitra, err := s.mitra.GetByID(ctx, in.MitraID)
 	if err != nil {
 		return nil, err

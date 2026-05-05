@@ -11,8 +11,9 @@ templ AuthLayout(props AuthLayoutProps) {
       <meta name="color-scheme" content="light"/>
       <title>{ props.Title } - Tokobangunan</title>
       <link rel="stylesheet" href="/static/css/app.css"/>
+      <style>[x-cloak]{display:none !important}</style>
       <script src="/static/js/htmx.min.js" defer></script>
-      <script src="/static/js/app.js" defer></script>
+      <script src="/static/js/app.min.js" defer></script>
       <script src="/static/js/alpine.min.js" defer></script>
     </head>
     <body class="min-h-screen bg-gradient-soft text-slate-900 antialiased">

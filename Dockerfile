@@ -32,8 +32,17 @@ RUN templ generate
 
 # Build CSS (input -> compiled output under web/static/css/)
 RUN if [ -f web/static/css/input.css ]; then \
-        tailwindcss -i web/static/css/input.css -o web/static/css/output.css --minify; \
+        tailwindcss -i web/static/css/input.css -o web/static/css/app.css --minify; \
     fi
+
+# Minify project JS (app/sync/penjualan-offline/etc) via esbuild.
+# Node only required for this step; runtime image stays node-free.
+RUN apk add --no-cache nodejs npm \
+    && for f in app penjualan-offline sync uuid barcode_scanner sw-register; do \
+         if [ -f "web/static/js/$f.js" ]; then \
+           npx --yes esbuild "web/static/js/$f.js" --minify --target=es2020 --outfile="web/static/js/$f.min.js"; \
+         fi; \
+       done
 
 # Compile static, stripped binary
 RUN go build -trimpath -ldflags '-s -w' -o /server ./cmd/server

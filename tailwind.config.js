@@ -1,9 +1,29 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  // Scan source-of-truth only. Templ-generated *_templ.go duplicates *.templ
+  // (so we skip them via specific globs) — cuts content surface ~50%.
   content: [
     "./internal/view/**/*.templ",
-    "./internal/view/**/*.go",
+    "./internal/view/**/helpers.go",
+    "./internal/view/**/types.go",
     "./internal/handler/**/*.go",
+    "./web/static/js/app.js",
+    "./web/static/js/penjualan-offline.js",
+    "./web/static/js/sync.js",
+  ],
+  // Dynamic Alpine :class strings (literal — no need for huge regex permutations)
+  safelist: [
+    // Toast variants (layout.templ ToastContainer)
+    "bg-emerald-50", "border-emerald-200", "text-emerald-900",
+    "bg-rose-50",    "border-rose-200",    "text-rose-900",
+    "bg-amber-50",   "border-amber-200",   "text-amber-900",
+    "bg-sky-50",     "border-sky-200",     "text-sky-900",
+    // Cashflow / mutasi semantic helpers (returned via Go funcs)
+    "bg-emerald-500", "ring-emerald-100",
+    "bg-sky-500",     "ring-sky-100",
+    "bg-emerald-300",
+    "text-emerald-700", "text-rose-700",
+    "border-emerald-200/40", "border-sky-200/40", "border-amber-200/40", "border-rose-200/40",
   ],
   theme: {
     extend: {
