@@ -318,7 +318,7 @@ templ posCartPanel(p POSProps) {
 }
 
 templ posScripts() {
-  <script>
+  <script nonce={ layout.CSPNonce(ctx) }>
     window.posState = function(initial) {
       const formatRpNum = window.alpineFormat || function(n){
         if (!isFinite(n)) n = 0;

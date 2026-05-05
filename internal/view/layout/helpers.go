@@ -1,6 +1,19 @@
 package layout
 
-import "github.com/a-h/templ"
+import (
+	"context"
+
+	"github.com/a-h/templ"
+
+	appmw "github.com/omanjaya/tokobangunan/internal/middleware"
+)
+
+// CSPNonce returns the per-request CSP nonce from context. Use inside templ
+// inline <script> tags as: <script nonce={ layout.CSPNonce(ctx) }>.
+// Returns "" when no nonce is present (tests / direct render).
+func CSPNonce(ctx context.Context) string {
+	return appmw.CSPNonce(ctx)
+}
 
 // brandSlug mengembalikan slug pendek (2-3 char) untuk avatar logo.
 func brandSlug(nav NavData) string {

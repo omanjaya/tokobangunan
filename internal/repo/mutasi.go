@@ -51,6 +51,82 @@ func NewMutasiRepo(pool *pgxpool.Pool) *MutasiRepo {
 	return &MutasiRepo{pool: pool}
 }
 
+// Pool exposes underlying pool untuk service yang butuh tx multi-table.
+func (r *MutasiRepo) Pool() *pgxpool.Pool { return r.pool }
+
+// LockStokRow - SELECT FOR UPDATE pada stok (gudang_id, produk_id) di dalam
+// tx existing. Kalau row belum ada, buat dengan qty=0 supaya lock tetap tegak.
+// Dipakai oleh service mutasi sebelum trigger DB melakukan update stok.
+func (r *MutasiRepo) LockStokRow(ctx context.Context, tx pgx.Tx, gudangID, produkID int64) error {
+	var qty float64
+	err := tx.QueryRow(ctx,
+		`SELECT qty FROM stok WHERE gudang_id = $1 AND produk_id = $2 FOR UPDATE`,
+		gudangID, produkID,
+	).Scan(&qty)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO stok (gudang_id, produk_id, qty) VALUES ($1, $2, 0)
+			 ON CONFLICT (gudang_id, produk_id) DO NOTHING`,
+			gudangID, produkID,
+		); err != nil {
+			return fmt.Errorf("init stok %d/%d: %w", gudangID, produkID, err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("lock stok %d/%d: %w", gudangID, produkID, err)
+	}
+	return nil
+}
+
+// UpdateStatusInTx - varian UpdateStatus yang menggunakan tx eksternal.
+// Trigger DB akan auto-update stok dalam tx yang sama.
+func (r *MutasiRepo) UpdateStatusInTx(ctx context.Context, tx pgx.Tx, id int64, current, next domain.StatusMutasi, userID int64) error {
+	switch next {
+	case domain.StatusDikirim:
+		const sql = `
+			UPDATE mutasi_gudang
+			SET status = $3, user_pengirim_id = $4, tanggal_kirim = now()
+			WHERE id = $1 AND status = $2`
+		tag, err := tx.Exec(ctx, sql, id, string(current), string(next), userID)
+		if err != nil {
+			return fmt.Errorf("update status dikirim: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return domain.ErrTransisiInvalid
+		}
+		return nil
+	case domain.StatusDiterima:
+		const sql = `
+			UPDATE mutasi_gudang
+			SET status = $3, user_penerima_id = $4, tanggal_terima = now()
+			WHERE id = $1 AND status = $2`
+		tag, err := tx.Exec(ctx, sql, id, string(current), string(next), userID)
+		if err != nil {
+			return fmt.Errorf("update status diterima: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return domain.ErrTransisiInvalid
+		}
+		return nil
+	case domain.StatusDibatalkan:
+		const sql = `
+			UPDATE mutasi_gudang
+			SET status = $3
+			WHERE id = $1 AND status = $2`
+		tag, err := tx.Exec(ctx, sql, id, string(current), string(next))
+		if err != nil {
+			return fmt.Errorf("update status dibatalkan: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return domain.ErrTransisiInvalid
+		}
+		return nil
+	default:
+		return domain.ErrTransisiInvalid
+	}
+}
+
 const mutasiColumns = `id, nomor_mutasi, tanggal, gudang_asal_id, gudang_tujuan_id,
 	status, user_pengirim_id, user_penerima_id, tanggal_kirim, tanggal_terima,
 	catatan, client_uuid, created_at, updated_at`

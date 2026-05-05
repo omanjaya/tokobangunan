@@ -222,16 +222,20 @@ func newEcho(cfg *config.Config, logger *slog.Logger, pool *pgxpool.Pool) *echo.
 	e.Use(echomw.BodyLimit("8M"))
 	if cfg.IsProduction() {
 		e.Use(echomw.SecureWithConfig(echomw.SecureConfig{
-			XSSProtection:         "1; mode=block",
-			ContentTypeNosniff:    "nosniff",
-			XFrameOptions:         "DENY",
-			HSTSMaxAge:            31536000,
-			HSTSPreloadEnabled:    true,
-			ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
+			XSSProtection:      "1; mode=block",
+			ContentTypeNosniff: "nosniff",
+			XFrameOptions:      "DENY",
+			HSTSMaxAge:         31536000,
+			HSTSPreloadEnabled: true,
+			// Content-Security-Policy is set per-request by appmw.CSP below
+			// so that script-src can carry a fresh nonce on every response.
 		}))
 	} else {
 		e.Use(echomw.Secure())
 	}
+	// Per-request CSP with script nonce. Must run BEFORE handlers render so
+	// the nonce is available in the request context.Context for templ views.
+	e.Use(appmw.CSP(cfg.IsProduction()))
 
 	// Global per-IP rate limit (300/min, burst 100). Skip ops + static.
 	e.Use(perIPRateLimiterWithSkipper(300, 100, func(c echo.Context) bool {

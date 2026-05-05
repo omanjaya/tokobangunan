@@ -42,14 +42,20 @@ type FormProps struct {
 	Gudangs   []domain.Gudang
 	Suppliers []domain.Supplier
 	Satuans   []domain.Satuan
+
+	// EditID — kalau >0, form bertindak sebagai edit ke /pembelian/:id.
+	EditID int64
 }
 
 // ShowProps - data halaman detail pembelian.
 type ShowProps struct {
-	Nav         layout.NavData
-	User        layout.UserData
-	Pembelian   *domain.Pembelian
-	Pembayarans []domain.PembayaranSupplier
-	Sisa        int64
-	GeneralErr  string
+	Nav           layout.NavData
+	User          layout.UserData
+	Pembelian     *domain.Pembelian
+	Pembayarans   []domain.PembayaranSupplier
+	Sisa          int64
+	GeneralErr    string
+	HasPembayaran bool
+	CanEdit       bool
+	CSRFToken     string
 }

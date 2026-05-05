@@ -3,7 +3,39 @@ package pembelian
 import (
 	"strconv"
 	"strings"
+
+	"github.com/a-h/templ"
 )
+
+// formAction return URL action utk form: /pembelian (create) atau
+// /pembelian/:id (update).
+func formAction(p FormProps) templ.SafeURL {
+	if p.EditID > 0 {
+		return templ.SafeURL("/pembelian/" + strconv.FormatInt(p.EditID, 10))
+	}
+	return templ.SafeURL("/pembelian")
+}
+
+func formTitle(p FormProps) string {
+	if p.EditID > 0 {
+		return "Edit Pembelian"
+	}
+	return "Pembelian Baru"
+}
+
+func formSubtitle(p FormProps) string {
+	if p.EditID > 0 {
+		return "Revisi header & item pembelian. Stok lama akan di-rollback."
+	}
+	return "Catat pembelian dari supplier ke gudang."
+}
+
+func formCrumb(p FormProps) string {
+	if p.EditID > 0 {
+		return "Edit"
+	}
+	return "Baru"
+}
 
 // errOf ambil pesan error per field name (lowercase).
 func errOf(p FormProps, field string) string {

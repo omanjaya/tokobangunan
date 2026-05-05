@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/omanjaya/tokobangunan/internal/domain"
 	"github.com/omanjaya/tokobangunan/internal/dto"
 	"github.com/omanjaya/tokobangunan/internal/repo"
@@ -151,7 +153,8 @@ func (s *MutasiService) Create(ctx context.Context, in dto.MutasiCreateInput, us
 }
 
 // Submit - draft -> dikirim. Cek stok cukup di gudang_asal sebelum transisi.
-// Trigger DB akan kurangi stok.
+// Trigger DB akan kurangi stok. Wrap di tx dengan FOR UPDATE pada stok asal
+// supaya dua submit paralel tidak balapan.
 func (s *MutasiService) Submit(ctx context.Context, id, userID int64) error {
 	m, err := s.mutasi.GetByID(ctx, id)
 	if err != nil {
@@ -163,17 +166,42 @@ func (s *MutasiService) Submit(ctx context.Context, id, userID int64) error {
 	if err := s.mutasi.LoadItems(ctx, m); err != nil {
 		return err
 	}
-	for _, it := range m.Items {
-		qty, err := s.stok.Get(ctx, m.GudangAsalID, it.ProdukID)
-		if err != nil {
-			return err
+	err = pgx.BeginFunc(ctx, s.mutasi.Pool(), func(tx pgx.Tx) error {
+		// Lock + cek stok cukup di gudang_asal sebelum trigger melakukan update.
+		seen := make(map[int64]struct{}, len(m.Items))
+		need := make(map[int64]float64, len(m.Items))
+		for _, it := range m.Items {
+			need[it.ProdukID] += it.QtyKonversi
 		}
-		if qty < it.QtyKonversi {
-			return fmt.Errorf("%w: %s (tersedia %.4f, butuh %.4f)",
-				domain.ErrStokTidakCukup, it.ProdukNama, qty, it.QtyKonversi)
+		for produkID := range need {
+			if _, ok := seen[produkID]; ok {
+				continue
+			}
+			seen[produkID] = struct{}{}
+			if err := s.mutasi.LockStokRow(ctx, tx, m.GudangAsalID, produkID); err != nil {
+				return err
+			}
 		}
-	}
-	if err := s.mutasi.UpdateStatus(ctx, id, domain.StatusDraft, domain.StatusDikirim, userID); err != nil {
+		for produkID, qtyNeed := range need {
+			var current float64
+			if err := tx.QueryRow(ctx,
+				`SELECT qty FROM stok WHERE gudang_id = $1 AND produk_id = $2`,
+				m.GudangAsalID, produkID,
+			).Scan(&current); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					current = 0
+				} else {
+					return err
+				}
+			}
+			if current < qtyNeed {
+				return fmt.Errorf("%w: produk %d (tersedia %.4f, butuh %.4f)",
+					domain.ErrStokTidakCukup, produkID, current, qtyNeed)
+			}
+		}
+		return s.mutasi.UpdateStatusInTx(ctx, tx, id, domain.StatusDraft, domain.StatusDikirim, userID)
+	})
+	if err != nil {
 		return err
 	}
 	s.logAudit(ctx, userID, "submit", id, map[string]any{"status": "draft"}, map[string]any{"status": "dikirim"})
@@ -181,6 +209,7 @@ func (s *MutasiService) Submit(ctx context.Context, id, userID int64) error {
 }
 
 // Receive - dikirim -> diterima. Trigger DB akan tambah stok di gudang_tujuan.
+// Wrap di tx + lock stok tujuan supaya konsisten dengan Submit.
 func (s *MutasiService) Receive(ctx context.Context, id, userID int64) error {
 	m, err := s.mutasi.GetByID(ctx, id)
 	if err != nil {
@@ -189,7 +218,23 @@ func (s *MutasiService) Receive(ctx context.Context, id, userID int64) error {
 	if !m.Status.CanTransitionTo(domain.StatusDiterima) {
 		return domain.ErrTransisiInvalid
 	}
-	if err := s.mutasi.UpdateStatus(ctx, id, domain.StatusDikirim, domain.StatusDiterima, userID); err != nil {
+	if err := s.mutasi.LoadItems(ctx, m); err != nil {
+		return err
+	}
+	err = pgx.BeginFunc(ctx, s.mutasi.Pool(), func(tx pgx.Tx) error {
+		seen := make(map[int64]struct{}, len(m.Items))
+		for _, it := range m.Items {
+			if _, ok := seen[it.ProdukID]; ok {
+				continue
+			}
+			seen[it.ProdukID] = struct{}{}
+			if err := s.mutasi.LockStokRow(ctx, tx, m.GudangTujuanID, it.ProdukID); err != nil {
+				return err
+			}
+		}
+		return s.mutasi.UpdateStatusInTx(ctx, tx, id, domain.StatusDikirim, domain.StatusDiterima, userID)
+	})
+	if err != nil {
 		return err
 	}
 	s.logAudit(ctx, userID, "approve", id, map[string]any{"status": "dikirim"}, map[string]any{"status": "diterima"})
@@ -200,6 +245,8 @@ func (s *MutasiService) Receive(ctx context.Context, id, userID int64) error {
 //   - Dari draft: cukup ubah status (tidak menyentuh stok).
 //   - Dari dikirim: stok di gudang_asal di-revert oleh trigger DB
 //     (apply_mutasi_stok pada migration 0024).
+//
+// Wrap di tx + lock stok asal kalau status sebelumnya dikirim.
 func (s *MutasiService) Cancel(ctx context.Context, id, userID int64) error {
 	m, err := s.mutasi.GetByID(ctx, id)
 	if err != nil {
@@ -209,7 +256,27 @@ func (s *MutasiService) Cancel(ctx context.Context, id, userID int64) error {
 		return domain.ErrTransisiInvalid
 	}
 	prev := m.Status
-	if err := s.mutasi.UpdateStatus(ctx, id, m.Status, domain.StatusDibatalkan, userID); err != nil {
+	if prev == domain.StatusDikirim {
+		if err := s.mutasi.LoadItems(ctx, m); err != nil {
+			return err
+		}
+	}
+	err = pgx.BeginFunc(ctx, s.mutasi.Pool(), func(tx pgx.Tx) error {
+		if prev == domain.StatusDikirim {
+			seen := make(map[int64]struct{}, len(m.Items))
+			for _, it := range m.Items {
+				if _, ok := seen[it.ProdukID]; ok {
+					continue
+				}
+				seen[it.ProdukID] = struct{}{}
+				if err := s.mutasi.LockStokRow(ctx, tx, m.GudangAsalID, it.ProdukID); err != nil {
+					return err
+				}
+			}
+		}
+		return s.mutasi.UpdateStatusInTx(ctx, tx, id, prev, domain.StatusDibatalkan, userID)
+	})
+	if err != nil {
 		return err
 	}
 	s.logAudit(ctx, userID, "cancel", id, map[string]any{"status": string(prev)}, map[string]any{"status": "dibatalkan"})

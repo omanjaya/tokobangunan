@@ -339,7 +339,7 @@ templ FormCard(p FormProps) {
 }
 
 templ formScripts() {
-  <script>
+  <script nonce={ layout.CSPNonce(ctx) }>
     function uid() { return Math.random().toString(36).slice(2); }
     function formatRpNum(n) {
       if (!isFinite(n)) n = 0;

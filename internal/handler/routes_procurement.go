@@ -1,6 +1,10 @@
 package handler
 
-import "github.com/labstack/echo/v4"
+import (
+	"github.com/labstack/echo/v4"
+
+	"github.com/omanjaya/tokobangunan/internal/auth"
+)
 
 // RegisterProcurementRoutes mendaftarkan route modul pengadaan
 // (pembelian + pembayaran supplier) dan stok opname.
@@ -13,6 +17,12 @@ func RegisterProcurementRoutes(g *echo.Group, ph *PembelianHandler, oh *StokOpna
 	pembelian.POST("", ph.Create)
 	pembelian.GET("/:id", ph.Show)
 	pembelian.POST("/:id/bayar", ph.RecordPayment)
+
+	// Edit / Update / Cancel — owner & admin only.
+	admin := pembelian.Group("", auth.RequireRole("owner", "admin"))
+	admin.GET("/:id/edit", ph.Edit)
+	admin.POST("/:id", ph.Update)
+	admin.POST("/:id/cancel", ph.Cancel)
 
 	opname := g.Group("/opname")
 	opname.GET("", oh.Index)

@@ -3,11 +3,42 @@ package pembelian
 import (
   "fmt"
 
+  "github.com/omanjaya/tokobangunan/internal/domain"
   "github.com/omanjaya/tokobangunan/internal/format"
   "github.com/omanjaya/tokobangunan/internal/view/components"
   "github.com/omanjaya/tokobangunan/internal/view/icon"
   "github.com/omanjaya/tokobangunan/internal/view/layout"
 )
+
+templ cancelModal(p ShowProps) {
+  {{ idStr := fmt.Sprintf("%d", p.Pembelian.ID) }}
+  <div x-data="{ open: false }" @open-cancel-modal.window="open = true">
+    <div x-show="open" x-cloak
+         class="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4">
+      <form method="post" action={ templ.SafeURL("/pembelian/" + idStr + "/cancel") }
+            class="bg-white rounded-lg shadow-xl w-full max-w-md p-5 space-y-3">
+        <h3 class="text-lg font-semibold text-rose-700">Batalkan Pembelian</h3>
+        <p class="text-sm text-slate-600">
+          Tindakan ini akan mengembalikan stok yang masuk dan menandai pembelian
+          sebagai dibatalkan. Tidak dapat di-undo via UI.
+        </p>
+        <input type="hidden" name="csrf_token" value={ p.CSRFToken }/>
+        <label class="block text-sm">
+          <span class="text-slate-700">Alasan pembatalan <span class="text-rose-600">*</span></span>
+          <textarea name="cancel_reason" rows="3" required
+                    class="input mt-1"
+                    placeholder="Mis. salah input, supplier batalkan, dll"></textarea>
+        </label>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" class="btn-ghost btn-md" @click="open = false">Batal</button>
+          <button type="submit" class="btn-primary btn-md bg-rose-600 hover:bg-rose-700">
+            Konfirmasi Batalkan
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+}
 
 templ Show(p ShowProps) {
   @layout.AppShell(layout.AppShellProps{
@@ -21,12 +52,43 @@ templ Show(p ShowProps) {
     },
   }) {
     @components.PageHeader("Detail Pembelian", p.Pembelian.NomorPembelian) {
-      if p.Pembelian.StatusBayar != "lunas" && p.Sisa > 0 {
+      if p.CanEdit {
+        @components.Button(components.ButtonProps{
+          Variant: "secondary",
+          Href:    fmt.Sprintf("/pembelian/%d/edit", p.Pembelian.ID),
+        }) {
+          @icon.Render("pencil", 14, "")
+          <span>Edit</span>
+        }
+        <button type="button" class="btn-secondary btn-md text-rose-700"
+                @click="$dispatch('open-cancel-modal')">
+          @icon.Render("x-circle", 14, "")
+          <span>Batalkan</span>
+        </button>
+      }
+      if p.Pembelian.StatusBayar != domain.StatusBeliDibatalkan && p.Pembelian.StatusBayar != "lunas" && p.Sisa > 0 {
         <a href={ templ.SafeURL(fmt.Sprintf("#bayar-form")) } class="btn-primary btn-md">
           @icon.Plus(16, "")
           <span>Catat Pembayaran</span>
         </a>
       }
+    }
+
+    if p.Pembelian.StatusBayar == domain.StatusBeliDibatalkan {
+      <div class="rounded-lg border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800 mb-4">
+        <div class="font-semibold">Pembelian Dibatalkan</div>
+        if p.Pembelian.CancelReason != nil && *p.Pembelian.CancelReason != "" {
+          <div class="mt-1">Alasan: { *p.Pembelian.CancelReason }</div>
+        }
+      </div>
+    } else if p.HasPembayaran {
+      <div class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 mb-4">
+        Tidak bisa diedit atau dibatalkan karena sudah ada pembayaran ke supplier.
+      </div>
+    }
+
+    if p.CanEdit {
+      @cancelModal(p)
     }
 
     if p.GeneralErr != "" {
@@ -89,7 +151,7 @@ templ Show(p ShowProps) {
           }
         }
 
-        if p.Pembelian.StatusBayar != "lunas" && p.Sisa > 0 {
+        if p.Pembelian.StatusBayar != domain.StatusBeliDibatalkan && p.Pembelian.StatusBayar != "lunas" && p.Sisa > 0 {
           <a id="bayar-form"></a>
           @PaymentForm(p)
         }

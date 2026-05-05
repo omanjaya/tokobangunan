@@ -10,16 +10,16 @@ import (
 
 templ Form(p FormProps) {
   @layout.AppShell(layout.AppShellProps{
-    Title: "Pembelian Baru",
+    Title: formTitle(p),
     Nav: p.Nav,
     User: p.User,
     Breadcrumb: []layout.BreadcrumbItem{
       { Label: "Transaksi" },
       { Label: "Pembelian", Href: "/pembelian" },
-      { Label: "Baru" },
+      { Label: formCrumb(p) },
     },
   }) {
-    @components.PageHeader("Pembelian Baru", "Catat pembelian dari supplier ke gudang.") {}
+    @components.PageHeader(formTitle(p), formSubtitle(p)) {}
 
     if p.General != "" {
       <div class="mb-4">
@@ -27,7 +27,7 @@ templ Form(p FormProps) {
       </div>
     }
 
-    <form method="post" action="/pembelian" class="space-y-4">
+    <form method="post" action={ formAction(p) } class="space-y-4">
       @components.Card(components.CardProps{ Title: "Header" }) {
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           @components.FormField(components.FormFieldProps{ ID: "tanggal", Label: "Tanggal", Required: true, Error: errOf(p, "tanggal") }) {
@@ -122,7 +122,7 @@ templ Form(p FormProps) {
       </div>
     </form>
 
-    <script>
+    <script nonce={ layout.CSPNonce(ctx) }>
       function addItemRow() {
         var tbody = document.querySelector('#items-table tbody');
         var idx = tbody.children.length;

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/omanjaya/tokobangunan/internal/domain"
 	"github.com/omanjaya/tokobangunan/internal/dto"
 	"github.com/omanjaya/tokobangunan/internal/repo"
@@ -190,9 +192,165 @@ func (s *PembelianService) List(ctx context.Context, f repo.ListPembelianFilter)
 	return NewPageResult(items, total, f.Page, f.PerPage), nil
 }
 
-// Cancel belum didukung di Fase 5.
-func (s *PembelianService) Cancel(ctx context.Context, id int64) error {
-	return domain.ErrPembelianCancelBelum
+// HasPembayaran wrapper repo — cek apakah pembelian sudah ada pembayaran.
+func (s *PembelianService) HasPembayaran(ctx context.Context, id int64, _ time.Time) (bool, error) {
+	return s.pembelianRepo.HasPembayaranSupplier(ctx, id)
+}
+
+// Update revisi header + items pembelian existing. Guard: belum ada pembayaran
+// supplier dan belum dibatalkan. Stok lama di-rollback (kurangi balik), stok
+// baru di-tambah via trigger insert pembelian_item — semua dalam 1 tx.
+func (s *PembelianService) Update(ctx context.Context, id int64, in dto.PembelianCreateInput, userID int64) error {
+	existing, err := s.pembelianRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if existing.StatusBayar == domain.StatusBeliDibatalkan {
+		return domain.ErrPembelianDibatalkan
+	}
+	hasPay, err := s.pembelianRepo.HasPembayaranSupplier(ctx, id)
+	if err != nil {
+		return err
+	}
+	if hasPay {
+		return domain.ErrPembelianLocked
+	}
+
+	// Validasi supplier & gudang.
+	sup, err := s.supplierRepo.GetByID(ctx, in.SupplierID)
+	if err != nil {
+		return err
+	}
+	if !sup.IsActive {
+		return fmt.Errorf("supplier nonaktif")
+	}
+	if _, err := s.gudangRepo.GetByID(ctx, in.GudangID); err != nil {
+		return err
+	}
+
+	// Build items (snapshot + hitung subtotal).
+	items := make([]domain.PembelianItem, 0, len(in.Items))
+	var subtotalCents int64
+	for _, ii := range in.Items {
+		prod, err := s.produkRepo.GetByID(ctx, ii.ProdukID)
+		if err != nil {
+			return err
+		}
+		sat, err := s.satuanRepo.GetByID(ctx, ii.SatuanID)
+		if err != nil {
+			return err
+		}
+		konversi := 1.0
+		if prod.SatuanBesarID != nil && *prod.SatuanBesarID == ii.SatuanID {
+			konversi = prod.FaktorKonversi
+		}
+		qtyKonversi := ii.Qty * konversi
+		hargaCents := ii.HargaSatuan * 100
+		subCents := int64(ii.Qty * float64(hargaCents))
+		subtotalCents += subCents
+		items = append(items, domain.PembelianItem{
+			ProdukID:    prod.ID,
+			ProdukNama:  prod.Nama,
+			Qty:         ii.Qty,
+			SatuanID:    sat.ID,
+			SatuanKode:  sat.Kode,
+			QtyKonversi: qtyKonversi,
+			HargaSatuan: hargaCents,
+			Subtotal:    subCents,
+		})
+	}
+	diskonCents := in.Diskon * 100
+	totalCents := subtotalCents - diskonCents
+
+	var jatuhTempo *time.Time
+	if v := strings.TrimSpace(in.JatuhTempo); v != "" {
+		if jt, err := time.Parse("2006-01-02", v); err == nil {
+			jatuhTempo = &jt
+		}
+	}
+
+	p := &domain.Pembelian{
+		ID:             existing.ID,
+		NomorPembelian: existing.NomorPembelian,
+		Tanggal:        existing.Tanggal,
+		SupplierID:     in.SupplierID,
+		GudangID:       in.GudangID,
+		UserID:         existing.UserID,
+		Items:          items,
+		Subtotal:       subtotalCents,
+		Diskon:         diskonCents,
+		DPP:            totalCents,
+		PPNPersen:      0,
+		PPNAmount:      0,
+		Total:          totalCents,
+		StatusBayar:    domain.StatusBayarPembelian(in.StatusBayar),
+		JatuhTempo:     jatuhTempo,
+		Catatan:        strings.TrimSpace(in.Catatan),
+	}
+	if err := p.Validate(); err != nil {
+		return err
+	}
+
+	err = pgx.BeginFunc(ctx, s.pembelianRepo.Pool(), func(tx pgx.Tx) error {
+		return s.pembelianRepo.UpdateInTx(ctx, tx, p)
+	})
+	if err != nil {
+		return fmt.Errorf("update pembelian: %w", err)
+	}
+
+	s.logAudit(ctx, userID, "update", "pembelian", p.ID,
+		map[string]any{
+			"supplier_id":  existing.SupplierID,
+			"gudang_id":    existing.GudangID,
+			"total":        existing.Total,
+			"status_bayar": string(existing.StatusBayar),
+			"items_count":  len(existing.Items),
+		},
+		map[string]any{
+			"supplier_id":  p.SupplierID,
+			"gudang_id":    p.GudangID,
+			"total":        p.Total,
+			"status_bayar": string(p.StatusBayar),
+			"items_count":  len(p.Items),
+		})
+	return nil
+}
+
+// Cancel batalkan pembelian. Guard: belum ada pembayaran supplier & belum
+// dibatalkan. Stok semua items di-rollback.
+func (s *PembelianService) Cancel(ctx context.Context, id int64, userID int64, alasan string) error {
+	existing, err := s.pembelianRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if existing.StatusBayar == domain.StatusBeliDibatalkan {
+		return domain.ErrPembelianDibatalkan
+	}
+	hasPay, err := s.pembelianRepo.HasPembayaranSupplier(ctx, id)
+	if err != nil {
+		return err
+	}
+	if hasPay {
+		return domain.ErrPembelianLocked
+	}
+
+	err = pgx.BeginFunc(ctx, s.pembelianRepo.Pool(), func(tx pgx.Tx) error {
+		return s.pembelianRepo.CancelInTx(ctx, tx, id, userID, alasan)
+	})
+	if err != nil {
+		return fmt.Errorf("cancel pembelian: %w", err)
+	}
+
+	s.logAudit(ctx, userID, "cancel", "pembelian", id,
+		map[string]any{
+			"status_bayar": string(existing.StatusBayar),
+			"total":        existing.Total,
+		},
+		map[string]any{
+			"status_bayar":  string(domain.StatusBeliDibatalkan),
+			"cancel_reason": alasan,
+		})
+	return nil
 }
 
 // RecordPayment insert pembayaran + recompute status pembelian.

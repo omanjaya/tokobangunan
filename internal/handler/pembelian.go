@@ -192,15 +192,157 @@ func (h *PembelianHandler) Show(c echo.Context) error {
 
 	hist, _ := h.svc.HistoryPembayaran(ctx, p.ID)
 	sisa, _ := h.svc.SisaPembelian(ctx, p)
+	hasPay, _ := h.svc.HasPembayaran(ctx, p.ID, p.Tanggal)
+
+	canEdit := !hasPay && p.StatusBayar != domain.StatusBeliDibatalkan
+	if !isPrivilegedRole(user.Role) {
+		canEdit = false
+	}
 
 	props := pembelianview.ShowProps{
-		Nav:         layout.DefaultNav("/pembelian"),
-		User:        userData(user),
-		Pembelian:   p,
-		Pembayarans: hist,
-		Sisa:        sisa,
+		Nav:           layout.DefaultNav("/pembelian"),
+		User:          userData(user),
+		Pembelian:     p,
+		Pembayarans:   hist,
+		Sisa:          sisa,
+		HasPembayaran: hasPay,
+		CanEdit:       canEdit,
+		CSRFToken:     csrfFromContext(c),
 	}
 	return RenderHTML(c, http.StatusOK, pembelianview.Show(props))
+}
+
+// Edit GET /pembelian/:id/edit (owner/admin).
+func (h *PembelianHandler) Edit(c echo.Context) error {
+	user := auth.CurrentUser(c)
+	if user == nil {
+		return c.Redirect(http.StatusSeeOther, "/login")
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "ID pembelian tidak valid")
+	}
+	ctx := c.Request().Context()
+
+	p, err := h.svc.Get(ctx, id)
+	if err != nil {
+		if errors.Is(err, domain.ErrPembelianTidakDitemukan) {
+			return echo.NewHTTPError(http.StatusNotFound, "Pembelian tidak ditemukan")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "Gagal memuat pembelian")
+	}
+	if err := enforceGudangScope(c, p.GudangID); err != nil {
+		return err
+	}
+	if p.StatusBayar == domain.StatusBeliDibatalkan {
+		return c.Redirect(http.StatusSeeOther, "/pembelian/"+strconv.FormatInt(p.ID, 10))
+	}
+	hasPay, err := h.svc.HasPembayaran(ctx, p.ID, p.Tanggal)
+	if err != nil {
+		return err
+	}
+	if hasPay {
+		return c.Redirect(http.StatusSeeOther, "/pembelian/"+strconv.FormatInt(p.ID, 10))
+	}
+
+	in := dto.PembelianCreateInput{
+		Tanggal:     p.Tanggal.Format("2006-01-02"),
+		SupplierID:  p.SupplierID,
+		GudangID:    p.GudangID,
+		Diskon:      p.Diskon / 100,
+		StatusBayar: string(p.StatusBayar),
+		Catatan:     p.Catatan,
+	}
+	if p.JatuhTempo != nil {
+		in.JatuhTempo = p.JatuhTempo.Format("2006-01-02")
+	}
+	for _, it := range p.Items {
+		in.Items = append(in.Items, dto.PembelianItemInput{
+			ProdukID:    it.ProdukID,
+			Qty:         it.Qty,
+			SatuanID:    it.SatuanID,
+			HargaSatuan: it.HargaSatuan / 100,
+		})
+	}
+
+	gudangs, _ := h.gudangRepo.List(ctx, false)
+	suppliers, _ := h.supplierSvc.List(ctx, repo.ListSupplierFilter{Page: 1, PerPage: 200})
+	satuans, _ := h.satuanRepo.List(ctx)
+
+	props := pembelianview.FormProps{
+		Nav:       layout.DefaultNav("/pembelian"),
+		User:      userData(user),
+		Input:     in,
+		Gudangs:   gudangs,
+		Suppliers: suppliers.Items,
+		Satuans:   satuans,
+		EditID:    p.ID,
+	}
+	return RenderHTML(c, http.StatusOK, pembelianview.Form(props))
+}
+
+// Update POST /pembelian/:id (owner/admin).
+func (h *PembelianHandler) Update(c echo.Context) error {
+	user := auth.CurrentUser(c)
+	if user == nil {
+		return c.Redirect(http.StatusSeeOther, "/login")
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "ID pembelian tidak valid")
+	}
+	ctx := c.Request().Context()
+
+	in := dto.PembelianCreateInput{}
+	if err := c.Bind(&in); err != nil {
+		return h.renderEditErr(c, user, id, in, nil, "Form tidak valid.")
+	}
+	in.Items = parseItemRows(c)
+	if err := dto.Validate(&in); err != nil {
+		fe, _ := dto.CollectFieldErrors(err)
+		return h.renderEditErr(c, user, id, in, fe, "")
+	}
+	if err := h.svc.Update(ctx, id, in, user.ID); err != nil {
+		slog.ErrorContext(ctx, "update pembelian failed", "error", err)
+		return h.renderEditErr(c, user, id, in, nil, err.Error())
+	}
+	return c.Redirect(http.StatusSeeOther, "/pembelian/"+strconv.FormatInt(id, 10))
+}
+
+// Cancel POST /pembelian/:id/cancel (owner/admin).
+func (h *PembelianHandler) Cancel(c echo.Context) error {
+	user := auth.CurrentUser(c)
+	if user == nil {
+		return c.Redirect(http.StatusSeeOther, "/login")
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "ID pembelian tidak valid")
+	}
+	alasan := strings.TrimSpace(c.FormValue("cancel_reason"))
+	if err := h.svc.Cancel(c.Request().Context(), id, user.ID, alasan); err != nil {
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, err.Error())
+	}
+	return c.Redirect(http.StatusSeeOther, "/pembelian/"+strconv.FormatInt(id, 10))
+}
+
+func (h *PembelianHandler) renderEditErr(c echo.Context, user *auth.User, id int64, in dto.PembelianCreateInput, fe map[string]string, general string) error {
+	ctx := c.Request().Context()
+	gudangs, _ := h.gudangRepo.List(ctx, false)
+	suppliers, _ := h.supplierSvc.List(ctx, repo.ListSupplierFilter{Page: 1, PerPage: 200})
+	satuans, _ := h.satuanRepo.List(ctx)
+	props := pembelianview.FormProps{
+		Nav:       layout.DefaultNav("/pembelian"),
+		User:      userData(user),
+		Input:     in,
+		Errors:    fe,
+		General:   general,
+		Gudangs:   gudangs,
+		Suppliers: suppliers.Items,
+		Satuans:   satuans,
+		EditID:    id,
+	}
+	return RenderHTML(c, http.StatusUnprocessableEntity, pembelianview.Form(props))
 }
 
 // RecordPayment POST /pembelian/:id/bayar.

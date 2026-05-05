@@ -17,21 +17,24 @@ var (
 	ErrPembelianCancelBelum      = errors.New("pembelian belum mendukung pembatalan")
 	ErrPembayaranSupplierInvalid = errors.New("pembayaran supplier tidak valid")
 	ErrMetodeBayarInvalid        = errors.New("metode pembayaran tidak valid")
+	ErrPembelianLocked           = errors.New("pembelian tidak bisa diubah karena sudah ada pembayaran")
+	ErrPembelianDibatalkan       = errors.New("pembelian sudah dibatalkan")
 )
 
 // StatusBayarPembelian status pembayaran pembelian (hutang ke supplier).
 type StatusBayarPembelian string
 
 const (
-	StatusBeliLunas    StatusBayarPembelian = "lunas"
-	StatusBeliKredit   StatusBayarPembelian = "kredit"
-	StatusBeliSebagian StatusBayarPembelian = "sebagian"
+	StatusBeliLunas        StatusBayarPembelian = "lunas"
+	StatusBeliKredit       StatusBayarPembelian = "kredit"
+	StatusBeliSebagian     StatusBayarPembelian = "sebagian"
+	StatusBeliDibatalkan   StatusBayarPembelian = "dibatalkan"
 )
 
 // IsValid cek nilai status bayar pembelian.
 func (s StatusBayarPembelian) IsValid() bool {
 	switch s {
-	case StatusBeliLunas, StatusBeliKredit, StatusBeliSebagian:
+	case StatusBeliLunas, StatusBeliKredit, StatusBeliSebagian, StatusBeliDibatalkan:
 		return true
 	}
 	return false
@@ -60,6 +63,9 @@ type Pembelian struct {
 	Catatan        string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	CanceledAt     *time.Time
+	CanceledBy     *int64
+	CancelReason   *string
 }
 
 // PembelianItem baris item pembelian.

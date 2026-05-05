@@ -36,6 +36,29 @@ var skipPrefixes = []string{
 	"/search",
 }
 
+// serviceCoveredPrefixes - path yang sudah di-handle audit di service layer
+// (richer before/after JSON). Middleware skip menulis audit untuk prefix ini
+// supaya tidak duplikat row di audit_log.
+var serviceCoveredPrefixes = []string{
+	"/penjualan",
+	"/pembelian",
+	"/pembayaran",
+	"/mutasi",
+	"/mitra",
+	"/produk",
+	"/stok/adjust",
+}
+
+// isServiceCovered cek apakah path di-cover oleh service-level audit.
+func isServiceCovered(path string) bool {
+	for _, p := range serviceCoveredPrefixes {
+		if path == p || strings.HasPrefix(path, p+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // specialActions - last-segment path yang di-treat sebagai aksi khusus.
 var specialActions = map[string]string{
 	"submit":          "SUBMIT",
@@ -71,6 +94,12 @@ func AuditLog(svc *service.AuditLogService, pool *pgxpool.Pool) echo.MiddlewareF
 				path = c.Request().URL.Path
 			}
 			if shouldSkipAudit(path) {
+				return next(c)
+			}
+			// Skip middleware-level write untuk path yang sudah di-cover service.
+			// Service layer menulis entri audit dengan before/after JSON yang
+			// lebih kaya; middleware tidak perlu duplikasi.
+			if isServiceCovered(path) {
 				return next(c)
 			}
 
