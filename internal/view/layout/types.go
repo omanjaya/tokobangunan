@@ -71,6 +71,7 @@ func DefaultNav(activePath string) NavData {
 
 		{Label: "Inventory", IsSection: true},
 		{Label: "Stok", Href: "/stok", IconName: "package"},
+		{Label: "Penyesuaian Stok", Href: "/stok/adjust", IconName: "settings"},
 		{Label: "Produk", Href: "/produk", IconName: "boxes"},
 		{Label: "Satuan", Href: "/satuan", IconName: "ruler"},
 

@@ -1,0 +1,195 @@
+package stok
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// AdjustHistory - daftar history penyesuaian stok.
+templ AdjustHistory(p AdjustHistoryProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Riwayat Penyesuaian Stok",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Inventori" },
+      { Label: "Stok", Href: "/stok" },
+      { Label: "Penyesuaian", Href: "/stok/adjust" },
+      { Label: "Riwayat" },
+    },
+  }) {
+    @components.PageHeader("Riwayat Penyesuaian Stok", "Catatan semua adjustment stok lintas gudang. Filter sesuai kebutuhan audit.") {
+      @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Href: "/stok/adjust" }) {
+        @icon.Render("plus", 16, "")
+        <span>Penyesuaian Baru</span>
+      }
+    }
+
+    @adjustHistoryFilter(p)
+
+    if len(p.Items) == 0 {
+      <div class="mt-4 rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center">
+        @icon.Render("inbox", 32, "mx-auto text-slate-400")
+        <p class="mt-2 text-sm text-slate-600">Belum ada penyesuaian stok.</p>
+        <p class="text-xs text-slate-500">Coba ubah filter atau buat penyesuaian baru.</p>
+      </div>
+    } else {
+      <div class="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs hidden md:block">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="px-4 py-2 text-left">Tanggal</th>
+              <th class="px-4 py-2 text-left">Gudang</th>
+              <th class="px-4 py-2 text-left">Produk</th>
+              <th class="px-4 py-2 text-right">Qty</th>
+              <th class="px-4 py-2 text-left">Satuan</th>
+              <th class="px-4 py-2 text-left">Kategori</th>
+              <th class="px-4 py-2 text-left">User</th>
+              <th class="px-4 py-2 text-left">Catatan</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            for _, r := range p.Items {
+              <tr>
+                <td class="px-4 py-2 whitespace-nowrap text-slate-700">{ r.Tanggal.Format("2006-01-02 15:04") }</td>
+                <td class="px-4 py-2 text-slate-700">{ r.GudangNama }</td>
+                <td class="px-4 py-2">
+                  <div class="font-medium text-slate-900">{ r.ProdukNama }</div>
+                  <div class="text-xs text-slate-500">{ r.ProdukSKU }</div>
+                </td>
+                <td class={ "px-4 py-2 text-right tabular-nums font-semibold", qtyColorClass(r.Qty) }>
+                  { qtyDisplay(r.Qty) }
+                </td>
+                <td class="px-4 py-2 text-slate-700">{ r.SatuanKode }</td>
+                <td class="px-4 py-2">
+                  @components.Badge(AdjKategoriLabel(r.Kategori), AdjKategoriBadgeVariant(r.Kategori))
+                </td>
+                <td class="px-4 py-2 text-slate-700">{ r.UserNama }</td>
+                <td class="px-4 py-2 text-slate-600 max-w-xs truncate" title={ r.Catatan }>{ r.Catatan }</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Mobile cards -->
+      <div class="mt-4 grid grid-cols-1 gap-3 md:hidden">
+        for _, r := range p.Items {
+          <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-xs">
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <div class="text-sm font-medium text-slate-900 truncate">{ r.ProdukNama }</div>
+                <div class="text-xs text-slate-500">{ r.ProdukSKU } · { r.GudangNama }</div>
+              </div>
+              <div class={ "text-base font-semibold tabular-nums", qtyColorClass(r.Qty) }>
+                { qtyDisplay(r.Qty) }
+                <span class="text-xs text-slate-500 ml-1">{ r.SatuanKode }</span>
+              </div>
+            </div>
+            <div class="mt-2 flex items-center justify-between text-xs">
+              <span class="text-slate-500">{ r.Tanggal.Format("2006-01-02 15:04") } · { r.UserNama }</span>
+              @components.Badge(AdjKategoriLabel(r.Kategori), AdjKategoriBadgeVariant(r.Kategori))
+            </div>
+            if r.Catatan != "" {
+              <p class="mt-2 text-xs text-slate-600">{ r.Catatan }</p>
+            }
+          </div>
+        }
+      </div>
+
+      @adjustHistoryPagination(p)
+    }
+  }
+}
+
+templ adjustHistoryFilter(p AdjustHistoryProps) {
+  <form method="get" action="/stok/adjust/history" class="mt-1 grid grid-cols-1 md:grid-cols-5 gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-xs">
+    <div class="md:col-span-1">
+      <label for="f-gudang" class="block text-xs font-medium text-slate-600 mb-1">Gudang</label>
+      <select id="f-gudang" name="gudang_id" class="input">
+        <option value="0">Semua gudang</option>
+        for _, g := range p.Gudangs {
+          if g.ID == p.GudangID {
+            <option value={ strconv.FormatInt(g.ID, 10) } selected>{ g.Nama }</option>
+          } else {
+            <option value={ strconv.FormatInt(g.ID, 10) }>{ g.Nama }</option>
+          }
+        }
+      </select>
+    </div>
+    <div class="md:col-span-1">
+      <label for="f-kategori" class="block text-xs font-medium text-slate-600 mb-1">Kategori</label>
+      <select id="f-kategori" name="kategori" class="input">
+        <option value="">Semua kategori</option>
+        for _, opt := range AdjKategoriOptions() {
+          if opt.Value == p.Kategori {
+            <option value={ opt.Value } selected>{ opt.Label }</option>
+          } else {
+            <option value={ opt.Value }>{ opt.Label }</option>
+          }
+        }
+      </select>
+    </div>
+    <div class="md:col-span-1">
+      <label for="f-from" class="block text-xs font-medium text-slate-600 mb-1">Dari</label>
+      <input id="f-from" name="from" type="date" class="input" value={ p.From } />
+    </div>
+    <div class="md:col-span-1">
+      <label for="f-to" class="block text-xs font-medium text-slate-600 mb-1">Sampai</label>
+      <input id="f-to" name="to" type="date" class="input" value={ p.To } />
+    </div>
+    <div class="md:col-span-1 flex items-end gap-2">
+      @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+        @icon.Render("filter", 16, "")
+        <span>Terapkan</span>
+      }
+      @components.Button(components.ButtonProps{ Variant: "ghost", Size: "md", Href: "/stok/adjust/history" }) {
+        <span>Reset</span>
+      }
+    </div>
+  </form>
+}
+
+templ adjustHistoryPagination(p AdjustHistoryProps) {
+  if p.TotalPages > 1 {
+    <div class="mt-4 flex items-center justify-between text-sm text-slate-600">
+      <span>Total { strconv.Itoa(p.Total) } baris · Halaman { strconv.Itoa(p.Page) } / { strconv.Itoa(p.TotalPages) }</span>
+      <div class="flex gap-2">
+        if p.Page > 1 {
+          <a class="px-3 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50"
+             href={ templ.SafeURL(historyPageURL(p, p.Page-1)) }>Sebelumnya</a>
+        }
+        if p.Page < p.TotalPages {
+          <a class="px-3 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50"
+             href={ templ.SafeURL(historyPageURL(p, p.Page+1)) }>Selanjutnya</a>
+        }
+      </div>
+    </div>
+  }
+}
+
+func historyPageURL(p AdjustHistoryProps, page int) string {
+  return fmt.Sprintf("/stok/adjust/history?page=%d&gudang_id=%d&kategori=%s&from=%s&to=%s",
+    page, p.GudangID, p.Kategori, p.From, p.To)
+}
+
+func qtyDisplay(q float64) string {
+  if q > 0 {
+    return "+" + strconv.FormatFloat(q, 'f', -1, 64)
+  }
+  return strconv.FormatFloat(q, 'f', -1, 64)
+}
+
+func qtyColorClass(q float64) string {
+  if q < 0 {
+    return "text-rose-600"
+  }
+  if q > 0 {
+    return "text-emerald-600"
+  }
+  return "text-slate-700"
+}

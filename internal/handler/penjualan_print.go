@@ -28,6 +28,9 @@ func (h *PenjualanHandler) PrintPDF(c echo.Context) error {
 		}
 		return err
 	}
+	if err := enforceGudangScope(c, pj.GudangID); err != nil {
+		return err
+	}
 	mitra, err := h.mitra.Get(ctx, pj.MitraID)
 	if err != nil {
 		return err
@@ -120,6 +123,9 @@ func (h *PenjualanHandler) PrintDotMatrix(c echo.Context) error {
 		}
 		return err
 	}
+	if err := enforceGudangScope(c, pj.GudangID); err != nil {
+		return err
+	}
 	mitra, err := h.mitra.Get(ctx, pj.MitraID)
 	if err != nil {
 		return err
@@ -160,6 +166,9 @@ func (h *PenjualanHandler) printThermal(c echo.Context, mm int) error {
 		if errors.Is(err, domain.ErrPenjualanNotFound) {
 			return echo.NewHTTPError(http.StatusNotFound, "penjualan tidak ditemukan")
 		}
+		return err
+	}
+	if err := enforceGudangScope(c, pj.GudangID); err != nil {
 		return err
 	}
 	mitra, err := h.mitra.Get(ctx, pj.MitraID)

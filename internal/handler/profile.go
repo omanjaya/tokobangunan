@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"github.com/omanjaya/tokobangunan/internal/auth"
@@ -23,10 +24,11 @@ type ProfileHandler struct {
 	svc        *service.UserAccountService
 	acctRepo   *repo.UserAccountRepo
 	gudangRepo *repo.GudangRepo
+	authStore  *auth.Store
 }
 
-func NewProfileHandler(svc *service.UserAccountService, acctRepo *repo.UserAccountRepo, gudangRepo *repo.GudangRepo) *ProfileHandler {
-	return &ProfileHandler{svc: svc, acctRepo: acctRepo, gudangRepo: gudangRepo}
+func NewProfileHandler(svc *service.UserAccountService, acctRepo *repo.UserAccountRepo, gudangRepo *repo.GudangRepo, authStore *auth.Store) *ProfileHandler {
+	return &ProfileHandler{svc: svc, acctRepo: acctRepo, gudangRepo: gudangRepo, authStore: authStore}
 }
 
 // passwordRule - aturan password Fase 1 (selaras docs/08-security.md).
@@ -183,6 +185,26 @@ func (h *ProfileHandler) ChangePassword(c echo.Context) error {
 			return render(http.StatusInternalServerError, "Gagal mengubah password. Silakan coba lagi.", "")
 		}
 	}
+
+	// Invalidate semua sesi lain (mitigasi credential reuse) — sesi saat ini
+	// dipertahankan supaya user tidak ter-logout dari halaman ini.
+	if h.authStore != nil {
+		ctx := c.Request().Context()
+		if cookie, err := c.Cookie(auth.SessionCookieName); err == nil && cookie.Value != "" {
+			if curSess, err := uuid.Parse(cookie.Value); err == nil {
+				if err := h.authStore.DeleteSessionsByUserExcept(ctx, cur.ID, curSess); err != nil {
+					slog.WarnContext(ctx, "invalidate other sessions after password change",
+						"error", err, "user_id", cur.ID)
+				}
+			}
+		} else {
+			if err := h.authStore.DeleteSessionsByUser(ctx, cur.ID); err != nil {
+				slog.WarnContext(ctx, "invalidate sessions after password change",
+					"error", err, "user_id", cur.ID)
+			}
+		}
+	}
+
 	return render(http.StatusOK, "", "Password berhasil diubah.")
 }
 

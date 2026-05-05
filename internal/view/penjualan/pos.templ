@@ -1,0 +1,540 @@
+package penjualan
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ POS(p POSProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Penjualan POS",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Transaksi" },
+      { Label: "Penjualan", Href: "/penjualan" },
+      { Label: "POS" },
+    },
+  }) {
+    @components.PageHeader("Penjualan POS", "Mode kasir cepat. Tap produk untuk masuk ke keranjang.")
+    @POSCard(p)
+  }
+}
+
+templ POSCard(p POSProps) {
+  <form
+    id="pos-form"
+    method="post"
+    action="/penjualan"
+    x-data={ posAlpineState(p) }
+    @keydown.window.f2.prevent="$refs.submitBtn && $refs.submitBtn.click()"
+    class="space-y-3"
+  >
+    if p.General != "" {
+      @components.Alert(components.AlertProps{ Variant: "danger", Message: p.General })
+    }
+
+    <input type="hidden" name="client_uuid" value={ p.ClientUUID }/>
+    <input type="hidden" name="mitra_id" :value="mitra.id || 0"/>
+    <input type="hidden" name="gudang_id" :value="gudangId"/>
+    <input type="hidden" name="tanggal" :value="tanggal"/>
+    <input type="hidden" name="status_bayar" :value="status"/>
+    <input type="hidden" name="jatuh_tempo" :value="jatuhTempo"/>
+    <input type="hidden" name="catatan" :value="catatan"/>
+    <input type="hidden" name="diskon" :value="diskon"/>
+    <input type="hidden" name="ppn_enabled" :value="ppnEnabled ? 'on' : ''"/>
+
+    <template x-for="(item, idx) in items" :key="item.uid">
+      <div>
+        <input type="hidden" :name="'Items['+idx+'].ProdukID'" :value="item.produk_id"/>
+        <input type="hidden" :name="'Items['+idx+'].Qty'" :value="item.qty"/>
+        <input type="hidden" :name="'Items['+idx+'].SatuanID'" :value="item.satuan_id"/>
+        <input type="hidden" :name="'Items['+idx+'].HargaSatuan'" :value="item.harga"/>
+        <input type="hidden" :name="'Items['+idx+'].Diskon'" :value="item.diskon_item || 0"/>
+      </div>
+    </template>
+
+    <!-- Top bar -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
+      <div class="md:col-span-2 relative">
+        <label class="block text-[11px] uppercase tracking-wide text-slate-500 mb-1">Mitra (opsional)</label>
+        <input type="search" autocomplete="off"
+               x-model="mitra.query"
+               @input.debounce.300ms="searchMitra()"
+               @focus="mitra.open = true"
+               placeholder="Eceran (default) — ketik untuk cari mitra…"
+               value={ p.MitraNama }
+               class="input"/>
+        <div x-show="mitra.open && mitra.results.length > 0" x-cloak
+             class="absolute z-30 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+          <template x-for="m in mitra.results" :key="m.id">
+            <button type="button" @click="pickMitra(m)"
+                    class="w-full text-left px-3 py-2 hover:bg-brand-50 text-sm">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="font-medium truncate" x-text="m.nama"></div>
+                  <div class="text-xs text-slate-500" x-text="(m.kode || '') + ' · ' + (m.tipe || '')"></div>
+                </div>
+              </div>
+            </button>
+          </template>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-[11px] uppercase tracking-wide text-slate-500 mb-1">Gudang</label>
+        <select x-model.number="gudangId" @change="loadProduk()" class="input" required>
+          <option value="0">— Pilih gudang —</option>
+          for _, g := range p.Gudangs {
+            if g.ID == p.Input.GudangID {
+              <option value={ strconv.FormatInt(g.ID, 10) } selected>{ g.Kode } — { g.Nama }</option>
+            } else {
+              <option value={ strconv.FormatInt(g.ID, 10) }>{ g.Kode } — { g.Nama }</option>
+            }
+          }
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-[11px] uppercase tracking-wide text-slate-500 mb-1">Status</label>
+        <div class="flex gap-1 rounded-lg bg-slate-100 p-1 text-xs font-medium">
+          <button type="button" @click="status='lunas'"
+                  :class="status==='lunas' ? 'bg-white shadow text-brand-700' : 'text-slate-600'"
+                  class="flex-1 py-2 rounded-md min-h-11">Lunas</button>
+          <button type="button" @click="status='kredit'"
+                  :class="status==='kredit' ? 'bg-white shadow text-brand-700' : 'text-slate-600'"
+                  class="flex-1 py-2 rounded-md min-h-11">Kredit</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <!-- LEFT: search + grid -->
+      <div class="lg:col-span-8 space-y-3">
+        <div class="card p-3 space-y-3">
+          <div class="relative">
+            <input type="search" autocomplete="off"
+                   x-model="search"
+                   @input.debounce.250ms="onSearch()"
+                   placeholder="Cari nama / SKU produk… (autofokus)"
+                   x-ref="searchInput"
+                   class="input pl-9"/>
+            <span class="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400">
+              @icon.Search(18, "")
+            </span>
+          </div>
+
+          if len(p.Kategoris) > 0 {
+            <div class="flex flex-wrap gap-1.5">
+              <button type="button" @click="kategori=''; onSearch()"
+                      :class="kategori==='' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-700'"
+                      class="px-3 py-1.5 rounded-full text-xs font-medium">Semua</button>
+              for _, k := range p.Kategoris {
+                <button type="button"
+                        @click={ "kategori='" + escapeJSStr(k) + "'; onSearch()" }
+                        :class={ "kategori===" + jsString(k) + " ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-700'" }
+                        class="px-3 py-1.5 rounded-full text-xs font-medium">{ k }</button>
+              }
+            </div>
+          }
+        </div>
+
+        <div class="card p-3">
+          <div x-show="loading" x-cloak class="text-center py-8 text-sm text-slate-400">Memuat…</div>
+          <div x-show="!loading && filtered().length === 0" x-cloak class="text-center py-8 text-sm text-slate-400">
+            Tidak ada produk.
+          </div>
+          <div x-show="!loading && filtered().length > 0" x-cloak
+               class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+            <template x-for="p in filtered()" :key="p.id">
+              <button type="button" @click="addByProduk(p)"
+                      class="text-left bg-white border border-slate-200 rounded-lg p-3 hover:border-brand-400 hover:shadow-sm active:scale-95 transition min-h-[7rem] flex flex-col gap-1.5"
+                      :aria-label="'Tambah ' + p.nama">
+                <div class="font-medium text-sm text-slate-900 line-clamp-2" x-text="p.nama"></div>
+                <div class="text-[10px] text-slate-500 truncate" x-text="(p.sku || '') + (p.kategori_nama ? ' · ' + p.kategori_nama : '')"></div>
+                <div class="mt-auto flex items-center justify-between">
+                  <span class="text-sm font-semibold text-brand-700">Rp <span x-text="formatRp(p.harga_default || 0)"></span></span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded-full" :class="stokBadgeClass(p)" x-text="stokLabel(p)"></span>
+                </div>
+              </button>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: cart (desktop) / drawer (mobile) -->
+      <div class="hidden lg:block lg:col-span-4">
+        @posCartPanel(p)
+      </div>
+
+      <!-- Mobile drawer -->
+      <div class="lg:hidden">
+        <div x-show="cartOpen" x-cloak
+             class="fixed inset-0 z-40 bg-black/40"
+             @click="cartOpen=false"></div>
+        <div x-show="cartOpen" x-cloak
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="translate-y-full"
+             x-transition:enter-end="translate-y-0"
+             x-transition:leave="transition ease-in duration-150"
+             x-transition:leave-start="translate-y-0"
+             x-transition:leave-end="translate-y-full"
+             class="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl shadow-2xl max-h-[85vh] overflow-y-auto">
+          <div class="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between">
+            <h3 class="font-semibold">Keranjang</h3>
+            <button type="button" @click="cartOpen=false" class="text-slate-500 p-1" aria-label="Tutup">
+              @icon.X(20, "")
+            </button>
+          </div>
+          <div class="p-3">
+            @posCartPanel(p)
+          </div>
+        </div>
+
+        <button type="button" @click="cartOpen=true"
+                class="fixed bottom-20 right-3 left-3 z-30 lg:hidden bg-brand-600 text-white rounded-full shadow-lg py-3 px-4 flex items-center justify-between gap-2 font-medium"
+                :disabled="items.length === 0"
+                :class="items.length === 0 ? 'opacity-60' : ''">
+          <span class="inline-flex items-center gap-2">
+            @icon.ShoppingCart(18, "")
+            <span>Keranjang (<span x-text="items.length"></span>)</span>
+          </span>
+          <span>Rp <span x-text="formatRp(total())"></span></span>
+        </button>
+      </div>
+    </div>
+
+    @posScripts()
+  </form>
+}
+
+templ posCartPanel(p POSProps) {
+  <div class="card p-4 space-y-3 lg:sticky lg:top-4">
+    <div class="flex items-center justify-between">
+      <h3 class="font-semibold text-slate-900">Keranjang</h3>
+      <button type="button" @click="clearCart()" x-show="items.length > 0" x-cloak
+              class="text-xs text-rose-600 hover:underline">Kosongkan</button>
+    </div>
+
+    <div x-show="items.length === 0" x-cloak class="text-center py-8 text-slate-400">
+      <div class="mx-auto mb-2 inline-flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+        @icon.ShoppingCart(22, "")
+      </div>
+      <p class="text-sm">Belum ada produk dipilih</p>
+    </div>
+
+    <div x-show="items.length > 0" x-cloak class="space-y-2 max-h-[40vh] overflow-y-auto -mx-1 px-1">
+      <template x-for="(item, idx) in items" :key="item.uid">
+        <div class="rounded-lg border border-slate-200 p-2.5 bg-white">
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-medium truncate" x-text="item.produk_label"></div>
+              <div class="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                <span>Rp</span>
+                <input type="number" min="0" step="100" x-model.number="item.harga"
+                       aria-label="Harga satuan"
+                       class="w-24 h-7 px-1 text-right border-0 border-b border-slate-200 focus:border-brand-500 focus:outline-none bg-transparent"/>
+              </div>
+              <div class="mt-1 flex items-center justify-between text-[11px] text-slate-500">
+                <span>Diskon item</span>
+                <div class="inline-flex items-center gap-1">
+                  <span>Rp</span>
+                  <input type="number" min="0" step="100" x-model.number="item.diskon_item"
+                         aria-label="Diskon item"
+                         class="w-20 h-6 px-1 text-right border-0 border-b border-slate-200 focus:border-brand-500 focus:outline-none bg-transparent"/>
+                </div>
+              </div>
+            </div>
+            <button type="button" @click="removeItem(idx)" class="text-rose-500 hover:text-rose-700 p-1" aria-label="Hapus">
+              @icon.Trash(14, "")
+            </button>
+          </div>
+          <div class="mt-2 flex items-center justify-between gap-2">
+            <div class="inline-flex items-center rounded-md border border-slate-200">
+              <button type="button" @click="decQty(idx)" aria-label="Kurangi"
+                      class="w-11 h-11 flex items-center justify-center text-slate-600 hover:bg-slate-50">−</button>
+              <input type="number" min="0.0001" step="0.0001"
+                     x-model.number="item.qty"
+                     class="w-14 h-11 text-center border-x border-slate-200 focus:outline-none"/>
+              <button type="button" @click="incQty(idx)" aria-label="Tambah"
+                      class="w-11 h-11 flex items-center justify-center text-slate-600 hover:bg-slate-50">+</button>
+            </div>
+            <div class="text-sm font-semibold">Rp <span x-text="formatRp(Math.max(0, item.qty * item.harga - (item.diskon_item || 0)))"></span></div>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <dl class="space-y-1.5 text-sm border-t pt-3">
+      <div class="flex justify-between">
+        <dt class="text-slate-500">Subtotal</dt>
+        <dd>Rp <span x-text="formatRp(subtotal)"></span></dd>
+      </div>
+      <div class="flex justify-between items-center">
+        <dt class="text-slate-500">Diskon</dt>
+        <dd>
+          <input type="number" min="0" x-model.number="diskon" class="input text-right w-28 h-9"/>
+        </dd>
+      </div>
+      if p.PPNAvailable {
+        <div class="flex justify-between items-center">
+          <dt class="text-slate-500">
+            <label class="inline-flex items-center gap-2">
+              <input type="checkbox" x-model="ppnEnabled" class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+              <span>PPN { fmt.Sprintf("%.1f%%", p.PPNPersen) }</span>
+            </label>
+          </dt>
+          <dd>Rp <span x-text="formatRp(ppnAmount())"></span></dd>
+        </div>
+      }
+      <div class="flex justify-between border-t pt-2">
+        <dt class="font-semibold">Total</dt>
+        <dd class="font-bold text-lg text-brand-700">Rp <span x-text="formatRp(total())"></span></dd>
+      </div>
+    </dl>
+
+    <div x-show="status==='kredit'" x-cloak>
+      <label class="block text-[11px] uppercase tracking-wide text-slate-500 mb-1">Jatuh Tempo</label>
+      <input type="date" x-model="jatuhTempo" class="input"/>
+    </div>
+
+    <div>
+      <label class="block text-[11px] uppercase tracking-wide text-slate-500 mb-1">Catatan</label>
+      <textarea x-model="catatan" rows="2" class="input" placeholder="Catatan…"></textarea>
+    </div>
+
+    <button type="submit" x-ref="submitBtn"
+            :disabled="items.length === 0 || gudangId === 0"
+            :class="items.length === 0 || gudangId === 0 ? 'opacity-50 cursor-not-allowed' : ''"
+            class="btn-primary btn-md w-full">
+      @icon.Check(16, "")
+      <span>Simpan Transaksi (F2)</span>
+    </button>
+  </div>
+}
+
+templ posScripts() {
+  <script>
+    window.posState = function(initial) {
+      const formatRpNum = window.alpineFormat || function(n){
+        if (!isFinite(n)) n = 0;
+        n = Math.round(n);
+        return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+      };
+      window.alpineFormat = formatRpNum;
+
+      function uid() { return Math.random().toString(36).slice(2); }
+
+      function stokBadge(p) {
+        const qty = Number(p.stok || 0);
+        const min = Number(p.stok_minimum || 0);
+        if (qty <= 0) return "bg-rose-100 text-rose-700";
+        if (min > 0 && qty < min) return "bg-amber-100 text-amber-700";
+        return "bg-emerald-100 text-emerald-700";
+      }
+      function stokLabel(p) {
+        const qty = Number(p.stok || 0);
+        const sat = p.stok_satuan || "";
+        if (qty <= 0) return "Stok 0";
+        const trimmed = qty.toFixed(2).replace(/\.?0+$/, "");
+        return "Stok " + trimmed + " " + sat;
+      }
+
+      return {
+        // Data
+        items: [],
+        diskon: 0,
+        status: initial.status || "lunas",
+        tanggal: initial.tanggal || "",
+        gudangId: initial.gudangId || 0,
+        ppnEnabled: !!initial.ppnEnabled,
+        ppnPersen: Number(initial.ppnPersen || 0),
+        jatuhTempo: "",
+        catatan: "",
+        mitra: { id: 0, query: "", results: [], open: false, nama: "", tipe: "eceran", limit: 0, outstanding: 0 },
+
+        // POS UI
+        loading: false,
+        produkList: [],
+        search: "",
+        kategori: "",
+        cartOpen: false,
+
+        // ---------- Computeds ----------
+        get subtotal() {
+          return this.items.reduce((s, it) => {
+            const gross = (it.qty || 0) * (it.harga || 0);
+            return s + Math.max(0, gross - (it.diskon_item || 0));
+          }, 0);
+        },
+        dpp() { return Math.max(0, this.subtotal - (this.diskon || 0)); },
+        ppnAmount() {
+          if (!this.ppnEnabled || !this.ppnPersen) return 0;
+          return Math.round(this.dpp() * this.ppnPersen / 100);
+        },
+        total() { return this.dpp() + this.ppnAmount(); },
+        formatRp(n) { return formatRpNum(n); },
+        stokBadgeClass(p) { return stokBadge(p); },
+        stokLabel(p) { return stokLabel(p); },
+
+        // ---------- Cart ops ----------
+        addByProduk(p) {
+          const existing = this.items.find(it => it.produk_id === p.id);
+          if (existing) {
+            existing.qty = Number((Number(existing.qty || 0) + 1).toFixed(4));
+            return;
+          }
+          const sat = (p.satuans && p.satuans[0]) || { id: 0 };
+          this.items.push({
+            uid: uid(),
+            produk_id: p.id,
+            produk_label: p.nama,
+            qty: 1,
+            satuan_id: sat.id || 0,
+            satuans: p.satuans || [],
+            harga: Number(p.harga_default || 0),
+            diskon_item: 0,
+          });
+        },
+        incQty(i) {
+          const it = this.items[i]; if (!it) return;
+          it.qty = Number((Number(it.qty || 0) + 1).toFixed(4));
+        },
+        decQty(i) {
+          const it = this.items[i]; if (!it) return;
+          const next = Number((Number(it.qty || 0) - 1).toFixed(4));
+          if (next <= 0) { this.items.splice(i, 1); return; }
+          it.qty = next;
+        },
+        removeItem(i) { this.items.splice(i, 1); },
+        clearCart() { this.items = []; },
+
+        // ---------- Mitra ----------
+        async searchMitra() {
+          const q = (this.mitra.query || "").trim();
+          if (q.length < 2) { this.mitra.results = []; return; }
+          try {
+            const r = await fetch("/penjualan/search-mitra?q=" + encodeURIComponent(q));
+            this.mitra.results = await r.json();
+            this.mitra.open = true;
+          } catch (e) { this.mitra.results = []; }
+        },
+        pickMitra(m) {
+          this.mitra.id = m.id;
+          this.mitra.query = m.nama;
+          this.mitra.nama = m.nama;
+          this.mitra.tipe = m.tipe || "eceran";
+          this.mitra.limit = Number(m.limit || 0);
+          this.mitra.outstanding = Number(m.outstanding || 0);
+          this.mitra.open = false;
+          this.loadProduk();
+        },
+
+        // ---------- Produk grid ----------
+        async loadProduk() {
+          this.loading = true;
+          try {
+            const tipe = this.mitra.tipe || "eceran";
+            const url = "/penjualan/search-produk?q=" + encodeURIComponent(this.search || "") +
+                        "&tipe=" + encodeURIComponent(tipe) +
+                        "&gudang_id=" + encodeURIComponent(this.gudangId || 0) +
+                        "&limit=24";
+            const r = await fetch(url);
+            this.produkList = await r.json() || [];
+          } catch (e) {
+            this.produkList = [];
+          } finally {
+            this.loading = false;
+          }
+        },
+        onSearch() { this.loadProduk(); },
+        filtered() {
+          if (!this.kategori) return this.produkList;
+          return this.produkList.filter(p => (p.kategori_nama || "") === this.kategori);
+        },
+
+        // ---------- Init ----------
+        init() {
+          this.loadProduk();
+          if (typeof window.barcodeScanner === "function") {
+            window.barcodeScanner((sku) => this.addBySKU(sku));
+          }
+          this.$nextTick(() => {
+            if (this.$refs.searchInput) this.$refs.searchInput.focus();
+          });
+        },
+
+        async addBySKU(sku) {
+          try {
+            const r = await fetch("/produk/by-sku?sku=" + encodeURIComponent(sku));
+            if (!r.ok) return;
+            const p = await r.json();
+            const harga = p.harga_eceran ? Math.floor(p.harga_eceran / 100) : 0;
+            this.addByProduk({
+              id: p.id, nama: p.nama, sku: p.sku,
+              satuans: [{ id: p.satuan_kecil_id || 0 }],
+              harga_default: harga,
+            });
+            if (window.app && window.app.toast) {
+              window.app.toast("success", "Scanned", p.sku + " - " + p.nama, 2000);
+            }
+          } catch (e) {}
+        },
+      };
+    };
+  </script>
+}
+
+func posAlpineState(p POSProps) string {
+  status := p.Input.StatusBayar
+  if status == "" { status = "lunas" }
+  ppnEnabled := "false"
+  if p.Input.PPNEnabled { ppnEnabled = "true" }
+  return "posState({ status: '" + status +
+    "', tanggal: '" + p.Input.Tanggal +
+    "', gudangId: " + strconv.FormatInt(p.Input.GudangID, 10) +
+    ", ppnEnabled: " + ppnEnabled +
+    ", ppnPersen: " + fmt.Sprintf("%g", p.PPNPersen) + " })"
+}
+
+// jsString returns a JSON-quoted JS string literal for templ class expressions.
+func jsString(s string) string {
+  // Minimal escape: backslash, quote, newline.
+  out := make([]byte, 0, len(s)+2)
+  out = append(out, '\'')
+  for i := 0; i < len(s); i++ {
+    ch := s[i]
+    switch ch {
+    case '\\', '\'':
+      out = append(out, '\\', ch)
+    case '\n':
+      out = append(out, '\\', 'n')
+    case '\r':
+      out = append(out, '\\', 'r')
+    default:
+      out = append(out, ch)
+    }
+  }
+  out = append(out, '\'')
+  return string(out)
+}
+
+func escapeJSStr(s string) string {
+  out := make([]byte, 0, len(s))
+  for i := 0; i < len(s); i++ {
+    ch := s[i]
+    switch ch {
+    case '\\', '\'':
+      out = append(out, '\\', ch)
+    case '\n':
+      out = append(out, '\\', 'n')
+    default:
+      out = append(out, ch)
+    }
+  }
+  return string(out)
+}

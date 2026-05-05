@@ -1,0 +1,242 @@
+package stok
+
+import (
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// Adjust - halaman form penyesuaian stok.
+templ Adjust(p AdjustFormProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Penyesuaian Stok",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Inventori" },
+      { Label: "Stok", Href: "/stok" },
+      { Label: "Penyesuaian" },
+    },
+  }) {
+    @components.PageHeader("Penyesuaian Stok", "Koreksi cepat qty stok per produk per gudang. Untuk pembelian dari supplier, pakai menu Pembelian.") {
+      @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: "/stok/adjust/history" }) {
+        @icon.Render("history", 16, "")
+        <span>Riwayat</span>
+      }
+    }
+
+    if p.Success != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "success", Message: p.Success })
+      </div>
+    }
+    if p.General != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "danger", Message: p.General })
+      </div>
+    }
+
+    <div class="max-w-3xl" x-data={ adjustState(p) }>
+      <form method="post" action="/stok/adjust" class="space-y-4" @submit="onSubmit($event)">
+
+        @components.Card(components.CardProps{ Title: "Pilih Produk" }) {
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            @components.FormField(components.FormFieldProps{ ID: "gudang_id", Label: "Gudang", Required: true, Error: errOfAdj(p, "gudangid") }) {
+              <select id="gudang_id" name="gudang_id" class="input" required x-model.number="gudangID" @change="onGudangChange()">
+                <option value="">— pilih gudang —</option>
+                for _, g := range p.Gudangs {
+                  if g.ID == p.Input.GudangID {
+                    <option value={ strconv.FormatInt(g.ID, 10) } selected>{ g.Kode } — { g.Nama }</option>
+                  } else {
+                    <option value={ strconv.FormatInt(g.ID, 10) }>{ g.Kode } — { g.Nama }</option>
+                  }
+                }
+              </select>
+            }
+
+            <div>
+              <label for="produk-search" class="block text-sm font-medium text-slate-700 mb-1">Produk <span class="text-rose-600">*</span></label>
+              <div class="relative">
+                <input id="produk-search" type="text" autocomplete="off"
+                       class="input w-full"
+                       placeholder="Ketik nama / SKU produk…"
+                       x-model="search"
+                       @input.debounce.250ms="searchProduk()"
+                       @focus="searchProduk()"
+                       aria-label="Cari produk" />
+                <input type="hidden" name="produk_id" :value="produk ? produk.id : ''" required />
+                <template x-if="results.length > 0 && !produk">
+                  <div class="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-72 overflow-auto">
+                    <template x-for="r in results" :key="r.id">
+                      <button type="button"
+                              class="w-full text-left px-3 py-2 hover:bg-slate-50 border-b border-slate-100 last:border-0"
+                              @click="pickProduk(r)">
+                        <div class="text-sm font-medium text-slate-900" x-text="r.nama"></div>
+                        <div class="text-xs text-slate-500">
+                          <span x-text="r.sku"></span>
+                          <span class="ml-2" x-text="(r.kategori_nama ? '· ' + r.kategori_nama : '')"></span>
+                        </div>
+                      </button>
+                    </template>
+                  </div>
+                </template>
+                <template x-if="produk">
+                  <div class="mt-2 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                    <div class="text-sm">
+                      <div class="font-medium text-slate-900" x-text="produk.nama"></div>
+                      <div class="text-xs text-slate-500" x-text="produk.sku"></div>
+                    </div>
+                    <button type="button" class="text-xs text-rose-600 hover:underline" @click="clearProduk()">Ganti</button>
+                  </div>
+                </template>
+              </div>
+              if errOfAdj(p, "produkid") != "" {
+                <p class="mt-1 text-xs text-rose-600">{ errOfAdj(p, "produkid") }</p>
+              }
+            </div>
+          </div>
+
+          <template x-if="produk">
+            <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div class="rounded-lg border border-slate-200 bg-white p-3">
+                <div class="text-xs uppercase tracking-wide text-slate-500">Stok saat ini</div>
+                <div class="mt-1 text-2xl font-semibold text-slate-900">
+                  <span x-text="formatQty(produk.stok_qty || 0)"></span>
+                  <span class="text-sm text-slate-500" x-text="' ' + (produk.stok_satuan || '')"></span>
+                </div>
+              </div>
+              <div :class="'rounded-lg border p-3 ' + (previewVariant === 'danger' ? 'border-rose-200 bg-rose-50' : (previewVariant === 'success' ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'))">
+                <div class="text-xs uppercase tracking-wide text-slate-500">Stok setelah penyesuaian</div>
+                <div :class="'mt-1 text-2xl font-semibold ' + (previewVariant === 'danger' ? 'text-rose-700' : (previewVariant === 'success' ? 'text-emerald-700' : 'text-slate-900'))">
+                  <span x-text="formatQty(previewStok)"></span>
+                  <span class="text-sm text-slate-500" x-text="' ' + (produk.stok_satuan || '')"></span>
+                </div>
+              </div>
+            </div>
+          </template>
+        }
+
+        @components.Card(components.CardProps{ Title: "Detail Penyesuaian" }) {
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            @components.FormField(components.FormFieldProps{ ID: "satuan_id", Label: "Satuan", Required: true, Error: errOfAdj(p, "satuanid") }) {
+              <select id="satuan_id" name="satuan_id" class="input" required x-model.number="satuanID">
+                <option value="">— pilih satuan —</option>
+                <template x-for="s in satuans" :key="s.id">
+                  <option :value="s.id" x-text="s.kode + ' — ' + s.nama"></option>
+                </template>
+              </select>
+            }
+
+            @components.FormField(components.FormFieldProps{ ID: "qty", Label: "Qty (+ tambah, − kurang)", Required: true, Helper: "Pakai angka negatif untuk mengurangi stok.", Error: errOfAdj(p, "qty") }) {
+              <input id="qty" name="qty" type="number" step="0.01" class="input" required
+                     x-model.number="qty"
+                     placeholder="contoh: -3 atau 10" />
+            }
+          </div>
+
+          <div class="mt-4">
+            @components.FormField(components.FormFieldProps{ ID: "kategori", Label: "Kategori Penyesuaian", Required: true, Error: errOfAdj(p, "kategori") }) {
+              <select id="kategori" name="kategori" class="input" required x-model="kategori">
+                <option value="">— pilih kategori —</option>
+                for _, opt := range AdjKategoriOptions() {
+                  if opt.Value == p.Input.Kategori {
+                    <option value={ opt.Value } selected>{ opt.Label }</option>
+                  } else {
+                    <option value={ opt.Value }>{ opt.Label }</option>
+                  }
+                }
+              </select>
+            }
+          </div>
+
+          <div class="mt-4">
+            @components.FormField(components.FormFieldProps{ ID: "catatan", Label: "Catatan", Helper: "Wajib diisi untuk kategori Hilang/Rusak agar audit jelas." }) {
+              <textarea id="catatan" name="catatan" rows="3" class="input" placeholder="contoh: rusak akibat banjir gudang B">{ p.Input.Catatan }</textarea>
+            }
+          </div>
+        }
+
+        <div class="flex items-center justify-end gap-2">
+          @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: "/stok" }) {
+            <span>Batal</span>
+          }
+          @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+            @icon.Render("check", 16, "")
+            <span>Simpan Penyesuaian</span>
+          }
+        </div>
+      </form>
+    </div>
+
+    @adjustScript()
+  }
+}
+
+// errOfAdj - lookup error per field aman dari nil map.
+func errOfAdj(p AdjustFormProps, key string) string {
+  if p.Errors == nil {
+    return ""
+  }
+  return p.Errors[key]
+}
+
+// adjustState - inline Alpine init (string Go yang akan jadi atribut x-data).
+func adjustState(p AdjustFormProps) string {
+  init := "{"
+  init += " gudangID: " + int64ToStr(p.Input.GudangID) + ","
+  init += " produkID: " + int64ToStr(p.Input.ProdukID) + ","
+  init += " satuanID: " + int64ToStr(p.Input.SatuanID) + ","
+  init += " qty: " + floatToStr(p.Input.Qty) + ","
+  init += " kategori: '" + p.Input.Kategori + "',"
+  init += " produk: null, satuans: [], search: '', results: [],"
+  init += " get previewStok() {"
+  init += "   if (!this.produk) return 0;"
+  init += "   return Number(this.produk.stok_qty || 0) + Number(this.qty || 0);"
+  init += " },"
+  init += " get previewVariant() {"
+  init += "   const q = Number(this.qty || 0);"
+  init += "   if (q < 0) return 'danger';"
+  init += "   if (q > 0) return 'success';"
+  init += "   return 'neutral';"
+  init += " },"
+  init += " formatQty(v) { return Number(v || 0).toLocaleString('id-ID'); },"
+  init += " async searchProduk() {"
+  init += "   if (this.produk) return;"
+  init += "   if (!this.search || this.search.length < 1) { this.results = []; return; }"
+  init += "   const url = '/penjualan/search-produk?q=' + encodeURIComponent(this.search) + '&limit=10' + (this.gudangID ? '&gudang_id=' + this.gudangID : '');"
+  init += "   try { const r = await fetch(url); if (!r.ok) return; this.results = await r.json(); } catch(e) {}"
+  init += " },"
+  init += " pickProduk(r) {"
+  init += "   this.produk = r;"
+  init += "   this.satuans = r.satuans || [];"
+  init += "   this.search = r.nama;"
+  init += "   this.results = [];"
+  init += "   if (this.satuans.length > 0) this.satuanID = this.satuans[0].id;"
+  init += " },"
+  init += " clearProduk() { this.produk = null; this.satuans = []; this.satuanID = 0; this.search = ''; },"
+  init += " onGudangChange() {"
+  init += "   if (this.produk) { this.searchProduk(); }"
+  init += " },"
+  init += " onSubmit(e) {"
+  init += "   if (!this.produk) { e.preventDefault(); alert('Pilih produk terlebih dulu'); return; }"
+  init += "   if (!this.qty || Number(this.qty) === 0) { e.preventDefault(); alert('Qty tidak boleh 0'); return; }"
+  init += " }"
+  init += "}"
+  return init
+}
+
+func int64ToStr(v int64) string {
+  if v == 0 { return "0" }
+  return strconv.FormatInt(v, 10)
+}
+
+func floatToStr(v float64) string {
+  if v == 0 { return "0" }
+  return strconv.FormatFloat(v, 'f', -1, 64)
+}
+
+// adjustScript - placeholder kalau ada init tambahan global. Saat ini kosong.
+templ adjustScript() {
+}

@@ -19,11 +19,30 @@ type MutasiService struct {
 	produk *repo.ProdukRepo
 	gudang *repo.GudangRepo
 	satuan *repo.SatuanRepo
+	audit  *AuditLogService // optional; nil-safe
 }
 
 func NewMutasiService(m *repo.MutasiRepo, s *repo.StokRepo, p *repo.ProdukRepo,
 	g *repo.GudangRepo, sa *repo.SatuanRepo) *MutasiService {
 	return &MutasiService{mutasi: m, stok: s, produk: p, gudang: g, satuan: sa}
+}
+
+// SetAudit attach AuditLogService (best-effort).
+func (s *MutasiService) SetAudit(a *AuditLogService) { s.audit = a }
+
+func (s *MutasiService) logAudit(ctx context.Context, userID int64, aksi string, id int64, before, after any) {
+	if s.audit == nil {
+		return
+	}
+	uid := userID
+	var uidp *int64
+	if uid > 0 {
+		uidp = &uid
+	}
+	_ = s.audit.Record(ctx, RecordEntry{
+		UserID: uidp, Aksi: aksi, Tabel: "mutasi_gudang", RecordID: id,
+		Before: before, After: after,
+	})
 }
 
 // Create - validate input, generate nomor, snapshot produk/satuan, insert.
@@ -109,6 +128,14 @@ func (s *MutasiService) Create(ctx context.Context, in dto.MutasiCreateInput, us
 	if err := s.mutasi.Create(ctx, m); err != nil {
 		return nil, fmt.Errorf("create mutasi: %w", err)
 	}
+	s.logAudit(ctx, userID, "create", m.ID, nil, map[string]any{
+		"nomor_mutasi":     m.NomorMutasi,
+		"tanggal":          m.Tanggal,
+		"gudang_asal_id":   m.GudangAsalID,
+		"gudang_tujuan_id": m.GudangTujuanID,
+		"items_count":      len(m.Items),
+		"status":           string(m.Status),
+	})
 
 	// Optional auto-submit.
 	if in.SubmitNow {
@@ -146,7 +173,11 @@ func (s *MutasiService) Submit(ctx context.Context, id, userID int64) error {
 				domain.ErrStokTidakCukup, it.ProdukNama, qty, it.QtyKonversi)
 		}
 	}
-	return s.mutasi.UpdateStatus(ctx, id, domain.StatusDraft, domain.StatusDikirim, userID)
+	if err := s.mutasi.UpdateStatus(ctx, id, domain.StatusDraft, domain.StatusDikirim, userID); err != nil {
+		return err
+	}
+	s.logAudit(ctx, userID, "submit", id, map[string]any{"status": "draft"}, map[string]any{"status": "dikirim"})
+	return nil
 }
 
 // Receive - dikirim -> diterima. Trigger DB akan tambah stok di gudang_tujuan.
@@ -158,7 +189,11 @@ func (s *MutasiService) Receive(ctx context.Context, id, userID int64) error {
 	if !m.Status.CanTransitionTo(domain.StatusDiterima) {
 		return domain.ErrTransisiInvalid
 	}
-	return s.mutasi.UpdateStatus(ctx, id, domain.StatusDikirim, domain.StatusDiterima, userID)
+	if err := s.mutasi.UpdateStatus(ctx, id, domain.StatusDikirim, domain.StatusDiterima, userID); err != nil {
+		return err
+	}
+	s.logAudit(ctx, userID, "approve", id, map[string]any{"status": "dikirim"}, map[string]any{"status": "diterima"})
+	return nil
 }
 
 // Cancel - cancel mutasi.
@@ -173,7 +208,12 @@ func (s *MutasiService) Cancel(ctx context.Context, id, userID int64) error {
 	if !m.Status.CanTransitionTo(domain.StatusDibatalkan) {
 		return domain.ErrTransisiInvalid
 	}
-	return s.mutasi.UpdateStatus(ctx, id, m.Status, domain.StatusDibatalkan, userID)
+	prev := m.Status
+	if err := s.mutasi.UpdateStatus(ctx, id, m.Status, domain.StatusDibatalkan, userID); err != nil {
+		return err
+	}
+	s.logAudit(ctx, userID, "cancel", id, map[string]any{"status": string(prev)}, map[string]any{"status": "dibatalkan"})
+	return nil
 }
 
 // Get - mutasi + items.

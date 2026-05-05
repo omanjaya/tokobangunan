@@ -12,6 +12,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/omanjaya/tokobangunan/internal/auth"
+	cryptohelper "github.com/omanjaya/tokobangunan/internal/crypto"
 	"github.com/omanjaya/tokobangunan/internal/domain"
 	"github.com/omanjaya/tokobangunan/internal/format"
 	"github.com/omanjaya/tokobangunan/internal/print/pdf"
@@ -35,9 +36,14 @@ func NewPenjualanShareHandler(
 	as *service.AppSettingService,
 	sessionSecret string,
 ) *PenjualanShareHandler {
+	// Derive subkey HKDF untuk domain "share-token" — beda subkey dengan
+	// session/secret-encrypt sehingga compromise satu purpose tidak rembet.
+	// Backward compat: stored share token tetap valid karena verify pakai
+	// subkey share-token deterministik dari SESSION_SECRET yang sama.
+	derived := cryptohelper.DeriveKey([]byte(sessionSecret), "share-token")
 	return &PenjualanShareHandler{
 		penjualan: pj, mitra: mr, gudang: gr, appSetting: as,
-		secret: []byte(sessionSecret),
+		secret: derived,
 	}
 }
 

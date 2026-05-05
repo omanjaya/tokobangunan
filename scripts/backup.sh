@@ -9,11 +9,24 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 mkdir -p "$BACKUP_DIR"
 
-docker exec "$CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" -F custom \
-    > "$BACKUP_DIR/tokobangunan_${TIMESTAMP}.dump"
+if [[ -n "${BACKUP_PASSPHRASE:-}" ]]; then
+    OUT="$BACKUP_DIR/tokobangunan_${TIMESTAMP}.dump.gz.gpg"
+    docker exec "$CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" -F custom \
+        | gzip \
+        | gpg --batch --yes --quiet \
+              --passphrase-file <(printf '%s' "$BACKUP_PASSPHRASE") \
+              --symmetric --cipher-algo AES256 \
+              -o "$OUT"
+    PATTERN="tokobangunan_*.dump.gz.gpg"
+else
+    OUT="$BACKUP_DIR/tokobangunan_${TIMESTAMP}.dump"
+    docker exec "$CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" -F custom \
+        > "$OUT"
+    PATTERN="tokobangunan_*.dump"
+fi
 
-# Cleanup: keep 30 backup terakhir.
-find "$BACKUP_DIR" -name "tokobangunan_*.dump" -type f \
+# Cleanup: keep 30 backup terakhir (sesuai pattern aktif).
+find "$BACKUP_DIR" -name "$PATTERN" -type f \
     | sort -r | tail -n +31 | xargs -r rm -f
 
-echo "Backup: $BACKUP_DIR/tokobangunan_${TIMESTAMP}.dump"
+echo "Backup: $OUT"

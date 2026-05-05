@@ -12,12 +12,31 @@ import (
 
 // MitraService orchestrasi use case mitra (CRUD + list).
 type MitraService struct {
-	repo *repo.MitraRepo
+	repo  *repo.MitraRepo
+	audit *AuditLogService // optional; nil-safe
 }
 
 // NewMitraService konstruktor.
 func NewMitraService(r *repo.MitraRepo) *MitraService {
 	return &MitraService{repo: r}
+}
+
+// SetAudit attach AuditLogService (best-effort).
+func (s *MitraService) SetAudit(a *AuditLogService) { s.audit = a }
+
+func (s *MitraService) logAudit(ctx context.Context, aksi string, id int64, before, after any) {
+	if s.audit == nil {
+		return
+	}
+	var uid *int64
+	if v := AuditUserFromContext(ctx); v > 0 {
+		v2 := v
+		uid = &v2
+	}
+	_ = s.audit.Record(ctx, RecordEntry{
+		UserID: uid, Aksi: aksi, Tabel: "mitra", RecordID: id,
+		Before: before, After: after,
+	})
 }
 
 // CreateMitraInput input service-level (sudah dalam cents).
@@ -63,6 +82,7 @@ func (s *MitraService) Create(ctx context.Context, in CreateMitraInput) (*domain
 	if err := s.repo.Create(ctx, m); err != nil {
 		return nil, fmt.Errorf("create mitra: %w", err)
 	}
+	s.logAudit(ctx, "create", m.ID, nil, mitraAuditPayload(m))
 	return m, nil
 }
 
@@ -75,12 +95,17 @@ func (s *MitraService) Update(ctx context.Context, in UpdateMitraInput) (*domain
 	if err := m.Validate(); err != nil {
 		return nil, err
 	}
+	var beforeSnap any
+	if old, errOld := s.repo.GetByID(ctx, in.ID); errOld == nil {
+		beforeSnap = mitraAuditPayload(old)
+	}
 	if err := s.repo.Update(ctx, m); err != nil {
 		if errors.Is(err, domain.ErrConflict) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("update mitra: %w", err)
 	}
+	s.logAudit(ctx, "update", m.ID, beforeSnap, mitraAuditPayload(m))
 	return m, nil
 }
 
@@ -100,7 +125,27 @@ func (s *MitraService) Get(ctx context.Context, id int64) (*domain.Mitra, error)
 
 // Delete soft delete.
 func (s *MitraService) Delete(ctx context.Context, id int64) error {
-	return s.repo.SoftDelete(ctx, id)
+	var beforeSnap any
+	if old, errOld := s.repo.GetByID(ctx, id); errOld == nil {
+		beforeSnap = mitraAuditPayload(old)
+	}
+	if err := s.repo.SoftDelete(ctx, id); err != nil {
+		return err
+	}
+	s.logAudit(ctx, "delete", id, beforeSnap, nil)
+	return nil
+}
+
+func mitraAuditPayload(m *domain.Mitra) map[string]any {
+	return map[string]any{
+		"id":         m.ID,
+		"kode":       m.Kode,
+		"nama":       m.Nama,
+		"tipe":       m.Tipe,
+		"limit_kredit": m.LimitKredit,
+		"jatuh_tempo_hari": m.JatuhTempoHari,
+		"is_active":  m.IsActive,
+	}
 }
 
 // Search autocomplete.

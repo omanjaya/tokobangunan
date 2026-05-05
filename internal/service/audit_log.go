@@ -75,3 +75,19 @@ func (s *AuditLogService) Get(ctx context.Context, id int64) (*domain.AuditLog, 
 func (s *AuditLogService) ListTabel(ctx context.Context) ([]string, error) {
 	return s.repo.ListTabel(ctx)
 }
+
+// auditUserKey adalah context key untuk membawa user_id dari handler ke service
+// supaya method yang signature-nya tidak menerima userID (mis. MitraService.Update)
+// tetap bisa menulis audit. Best-effort: jika tidak ada → audit user_id = nil.
+type auditUserKey struct{}
+
+// WithAuditUser attach user_id ke ctx untuk dikonsumsi oleh service-level audit.
+func WithAuditUser(ctx context.Context, userID int64) context.Context {
+	return context.WithValue(ctx, auditUserKey{}, userID)
+}
+
+// AuditUserFromContext extract user_id (0 = absent).
+func AuditUserFromContext(ctx context.Context) int64 {
+	v, _ := ctx.Value(auditUserKey{}).(int64)
+	return v
+}

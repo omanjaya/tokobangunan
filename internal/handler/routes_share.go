@@ -84,7 +84,7 @@ func BuildShareDeps(
 	mitraSvc := service.NewMitraService(mitraRepo)
 	gudangSvc := service.NewGudangService(gudangRepo)
 	penjualanSvc := service.NewPenjualanService(penjualanRepo, produkRepo, mitraRepo, gudangRepo, satuanRepo, piutangRepo)
-	pembayaranSvc := service.NewPembayaranService(pembayaranRepo, penjualanRepo, mitraRepo, piutangRepo)
+	pembayaranSvc := service.NewPembayaranService(pool, pembayaranRepo, penjualanRepo, mitraRepo, piutangRepo)
 	mitraAccessSvc := service.NewMitraAccessService(mitraAccessRepo, mitraRepo)
 
 	return ShareDeps{

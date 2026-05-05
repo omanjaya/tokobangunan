@@ -20,9 +20,13 @@ type ListMutasiFilter struct {
 	To             *time.Time
 	GudangAsalID   *int64
 	GudangTujuanID *int64
-	Status         *string
-	Page           int
-	PerPage        int
+	// UserScopeGudangID — kalau non-nil, paksa baris hanya yg
+	// gudang_asal_id ATAU gudang_tujuan_id sama dgn nilai ini.
+	// Dipakai untuk authorization scoping (kasir/staff per-gudang).
+	UserScopeGudangID *int64
+	Status            *string
+	Page              int
+	PerPage           int
 }
 
 // Normalize set default Page=1, PerPage=25 (max 100).
@@ -169,6 +173,11 @@ func (r *MutasiRepo) List(ctx context.Context, f ListMutasiFilter) ([]domain.Mut
 	if f.GudangTujuanID != nil {
 		where = append(where, fmt.Sprintf("gudang_tujuan_id = $%d", idx))
 		args = append(args, *f.GudangTujuanID)
+		idx++
+	}
+	if f.UserScopeGudangID != nil {
+		where = append(where, fmt.Sprintf("(gudang_asal_id = $%d OR gudang_tujuan_id = $%d)", idx, idx))
+		args = append(args, *f.UserScopeGudangID)
 		idx++
 	}
 	if f.Status != nil && strings.TrimSpace(*f.Status) != "" {

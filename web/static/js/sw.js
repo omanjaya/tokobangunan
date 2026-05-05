@@ -10,7 +10,8 @@
  * koneksi balik.
  */
 
-const CACHE_VERSION = "tokobangunan-v2";
+// __BUILD_SHA__ diganti runtime oleh swHandler (BUILD_SHA env atau timestamp).
+const CACHE_VERSION = "tokobangunan-__BUILD_SHA__";
 
 const PRECACHE_URLS = [
   "/login",

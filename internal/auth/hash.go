@@ -9,9 +9,11 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
+// Argon2id params dipakai HANYA saat HashPassword (hash baru).
+// VerifyPassword baca params dari PHC string sehingga hash lama (t=3) tetap verify OK.
 const (
 	argonMemory     = 64 * 1024 // 64 MiB
-	argonIterations = 3
+	argonIterations = 4
 	argonParallel   = 2
 	argonKeyLen     = 32
 	argonSaltLen    = 16

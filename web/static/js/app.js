@@ -56,6 +56,28 @@
     true
   );
 
+  // ---------- Logout cleanup -----------------------------------------------
+  // Saat user logout, server merespons Clear-Site-Data + redirect ke
+  // /login?logout=1. Browser modern (Chrome/Firefox/Safari modern) akan auto
+  // clear storage. Sebagai fallback (HTTP, browser lama), JS purge manual
+  // semua key dengan prefix "tb:".
+  (function purgeOnLogout() {
+    try {
+      const u = new URL(window.location.href);
+      if (u.pathname === "/login" && u.searchParams.get("logout") === "1") {
+        try {
+          const keys = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.indexOf("tb:") === 0) keys.push(k);
+          }
+          keys.forEach((k) => localStorage.removeItem(k));
+        } catch (e) { /* storage disabled */ }
+        try { sessionStorage.clear(); } catch (e) { /* noop */ }
+      }
+    } catch (e) { /* URL parse fail */ }
+  })();
+
   // ---------- Toast ---------------------------------------------------------
 
   app.toast = function (variant, title, message, durationMs) {

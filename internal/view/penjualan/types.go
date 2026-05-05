@@ -66,13 +66,37 @@ type FormProps struct {
 	// PPN config dari app_setting; nil-safe.
 	PPNAvailable bool    // true kalau pajak_config.ppn_enabled
 	PPNPersen    float64 // persentase aktif (mis. 11.0)
+
+	// EditID > 0 → form action menjadi /penjualan/:id (update mode).
+	// Kalau 0, default = /penjualan (create mode).
+	EditID int64
 }
 
 // ShowProps - props halaman detail.
 type ShowProps struct {
-	Nav       layout.NavData
-	User      layout.UserData
-	Penjualan *domain.Penjualan
-	Mitra     *domain.Mitra
-	Gudang    *domain.Gudang
+	Nav           layout.NavData
+	User          layout.UserData
+	Penjualan     *domain.Penjualan
+	Mitra         *domain.Mitra
+	Gudang        *domain.Gudang
+	HasPembayaran bool
+	CanEdit       bool
+	CSRFToken     string
+}
+
+// POSProps - props POS view (cashier-style: tap produk → masuk cart).
+type POSProps struct {
+	Nav     layout.NavData
+	User    layout.UserData
+	Input   dto.PenjualanCreateInput
+	Errors  dto.FieldErrors
+	General string
+
+	Gudangs    []GudangLite
+	Kategoris  []string
+	MitraNama  string
+	ClientUUID string
+
+	PPNAvailable bool
+	PPNPersen    float64
 }

@@ -59,6 +59,14 @@ func (h *PembelianHandler) Index(c echo.Context) error {
 	page, _ := strconv.Atoi(c.QueryParam("page"))
 	supplierID, _ := strconv.ParseInt(c.QueryParam("supplier_id"), 10, 64)
 	gudangID, _ := strconv.ParseInt(c.QueryParam("gudang_id"), 10, 64)
+	// Non-owner/admin: scope ke gudang sendiri.
+	if !isPrivilegedRole(user.Role) {
+		if user.GudangID != nil {
+			gudangID = *user.GudangID
+		} else {
+			gudangID = 1 << 62 // sentinel: tidak match data apa pun
+		}
+	}
 	status := strings.TrimSpace(c.QueryParam("status"))
 	from := strings.TrimSpace(c.QueryParam("from"))
 	to := strings.TrimSpace(c.QueryParam("to"))
@@ -87,20 +95,20 @@ func (h *PembelianHandler) Index(c echo.Context) error {
 	suppliers, _ := h.supplierSvc.List(ctx, repo.ListSupplierFilter{Page: 1, PerPage: 200})
 
 	props := pembelianview.IndexProps{
-		Nav:         layout.DefaultNav("/pembelian"),
-		User:        userData(user),
-		Items:       res.Items,
-		Total:       res.Total,
-		Page:        res.Page,
-		PerPage:     res.PerPage,
-		TotalPages:  res.TotalPages,
-		SupplierID:  supplierID,
-		GudangID:    gudangID,
-		Status:      status,
-		From:        from,
-		To:          to,
-		Gudangs:     gudangs,
-		Suppliers:   suppliers.Items,
+		Nav:          layout.DefaultNav("/pembelian"),
+		User:         userData(user),
+		Items:        res.Items,
+		Total:        res.Total,
+		Page:         res.Page,
+		PerPage:      res.PerPage,
+		TotalPages:   res.TotalPages,
+		SupplierID:   supplierID,
+		GudangID:     gudangID,
+		Status:       status,
+		From:         from,
+		To:           to,
+		Gudangs:      gudangs,
+		Suppliers:    suppliers.Items,
 		FlashSuccess: c.QueryParam("flash"),
 	}
 	return RenderHTML(c, http.StatusOK, pembelianview.Index(props))
@@ -178,6 +186,9 @@ func (h *PembelianHandler) Show(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "Gagal memuat pembelian")
 	}
+	if err := enforceGudangScope(c, p.GudangID); err != nil {
+		return err
+	}
 
 	hist, _ := h.svc.HistoryPembayaran(ctx, p.ID)
 	sisa, _ := h.svc.SisaPembelian(ctx, p)
@@ -207,6 +218,9 @@ func (h *PembelianHandler) RecordPayment(c echo.Context) error {
 	p, err := h.svc.Get(ctx, id)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "Pembelian tidak ditemukan")
+	}
+	if err := enforceGudangScope(c, p.GudangID); err != nil {
+		return err
 	}
 
 	in := dto.PembayaranSupplierInput{}

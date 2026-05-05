@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,6 +12,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -17,6 +20,9 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/time/rate"
 
 	"github.com/omanjaya/tokobangunan/internal/auth"
@@ -25,6 +31,21 @@ import (
 	appmw "github.com/omanjaya/tokobangunan/internal/middleware"
 	"github.com/omanjaya/tokobangunan/internal/repo"
 	"github.com/omanjaya/tokobangunan/internal/service"
+)
+
+var (
+	httpReqTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "http_requests_total",
+		Help: "Total HTTP requests by method and status",
+	}, []string{"method", "status"})
+	httpDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "http_request_duration_seconds",
+		Help:    "HTTP request duration",
+		Buckets: prometheus.DefBuckets,
+	}, []string{"method"})
+	pgxAcquired = promauto.NewGauge(prometheus.GaugeOpts{Name: "pgxpool_acquired_conns"})
+	pgxIdle     = promauto.NewGauge(prometheus.GaugeOpts{Name: "pgxpool_idle_conns"})
+	pgxMax      = promauto.NewGauge(prometheus.GaugeOpts{Name: "pgxpool_max_conns"})
 )
 
 func main() {
@@ -58,10 +79,16 @@ func run() error {
 	e := newEcho(cfg, logger, pool)
 
 	srvErr := make(chan error, 1)
+	srv := &http.Server{
+		Addr:              ":" + cfg.Port,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	go func() {
-		addr := ":" + cfg.Port
-		logger.Info("server starting", slog.String("addr", addr), slog.String("env", cfg.AppEnv))
-		if err := e.Start(addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		logger.Info("server starting", slog.String("addr", srv.Addr), slog.String("env", cfg.AppEnv))
+		if err := e.StartServer(srv); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			srvErr <- err
 		}
 		close(srvErr)
@@ -76,7 +103,7 @@ func run() error {
 		}
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), envDuration("SHUTDOWN_TIMEOUT", 30*time.Second))
 	defer cancel()
 	if err := e.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("graceful shutdown: %w", err)
@@ -178,10 +205,45 @@ func newEcho(cfg *config.Config, logger *slog.Logger, pool *pgxpool.Pool) *echo.
 	e.HidePort = true
 
 	e.Use(echomw.RequestID())
-	e.Use(echomw.Recover())
+	e.Use(echomw.RecoverWithConfig(echomw.RecoverConfig{
+		StackSize:         4 << 10,
+		DisableStackAll:   true,
+		DisablePrintStack: false,
+		LogErrorFunc: func(c echo.Context, err error, stack []byte) error {
+			logger.Error("panic recovered",
+				slog.String("path", c.Request().URL.Path),
+				slog.String("method", c.Request().Method),
+				slog.Any("error", err),
+				slog.String("stack", string(stack)))
+			return err
+		},
+	}))
 	e.Use(appmw.RequestLogger(logger))
 	e.Use(echomw.BodyLimit("8M"))
-	e.Use(echomw.Secure())
+	if cfg.IsProduction() {
+		e.Use(echomw.SecureWithConfig(echomw.SecureConfig{
+			XSSProtection:         "1; mode=block",
+			ContentTypeNosniff:    "nosniff",
+			XFrameOptions:         "DENY",
+			HSTSMaxAge:            31536000,
+			HSTSPreloadEnabled:    true,
+			ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
+		}))
+	} else {
+		e.Use(echomw.Secure())
+	}
+
+	// Global per-IP rate limit (300/min, burst 100). Skip ops + static.
+	e.Use(perIPRateLimiterWithSkipper(300, 100, func(c echo.Context) bool {
+		p := c.Request().URL.Path
+		return strings.HasPrefix(p, "/static/") || p == "/healthz" || p == "/livez" || p == "/readyz" || p == "/metrics" || p == "/sw.js" || p == "/manifest.webmanifest" || strings.HasPrefix(p, "/favicon")
+	}))
+
+	// Static asset Cache-Control. Long-cache for /static/*, no-cache for sw.js.
+	e.Use(staticCacheControl())
+
+	// Prometheus instrumentation: count + duration.
+	e.Use(promMiddleware())
 
 	csrfCfg := echomw.DefaultCSRFConfig
 	csrfCfg.TokenLookup = "form:csrf_token,header:X-CSRF-Token"
@@ -199,17 +261,25 @@ func newEcho(cfg *config.Config, logger *slog.Logger, pool *pgxpool.Pool) *echo.
 	// remain protected on POST; only GET-by-design routes naturally bypass via
 	// Echo CSRF's safe-method short-circuit.
 	csrfCfg.Skipper = func(c echo.Context) bool {
-		return c.Path() == "/healthz"
+		p := c.Path()
+		return p == "/healthz" || p == "/livez" || p == "/readyz" || p == "/metrics"
 	}
 	e.Use(echomw.CSRFWithConfig(csrfCfg))
 
 	e.Static("/static", "web/static")
-	e.File("/sw.js", "web/static/js/sw.js")
+	e.GET("/sw.js", swHandler)
 	e.File("/manifest.webmanifest", "web/static/manifest.webmanifest")
 	e.File("/favicon.ico", "web/static/icon/favicon.svg")
 	e.File("/favicon.svg", "web/static/icon/favicon.svg")
 
-	e.GET("/healthz", func(c echo.Context) error {
+	// Prometheus /metrics — basic-auth gated kalau env METRICS_USER/PASS di-set,
+	// kalau kosong → loopback only.
+	e.GET("/metrics", echo.WrapHandler(promhttp.Handler()), metricsAuth(pool))
+
+	e.GET("/livez", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, echo.Map{"status": "ok"})
+	})
+	readyzHandler := func(c echo.Context) error {
 		dbStatus := "ok"
 		pingCtx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Second)
 		defer cancel()
@@ -218,7 +288,9 @@ func newEcho(cfg *config.Config, logger *slog.Logger, pool *pgxpool.Pool) *echo.
 			return c.JSON(http.StatusServiceUnavailable, echo.Map{"status": "degraded", "db": dbStatus})
 		}
 		return c.JSON(http.StatusOK, echo.Map{"status": "ok", "db": dbStatus})
-	})
+	}
+	e.GET("/readyz", readyzHandler)
+	e.GET("/healthz", readyzHandler) // back-compat
 
 	e.GET("/", func(c echo.Context) error {
 		return c.Redirect(http.StatusSeeOther, "/login")
@@ -299,13 +371,15 @@ func newEcho(cfg *config.Config, logger *slog.Logger, pool *pgxpool.Pool) *echo.
 	onb.GET("/done", onboardingH.Done)
 
 	sharedRepos := sharedDeps{
-		gudangRepo: gudangRepo,
-		mitraRepo:  mitraRepo,
+		gudangRepo:  gudangRepo,
+		mitraRepo:   mitraRepo,
 		piutangRepo: piutangRepo,
-		piutangSvc: piutangSvc,
+		piutangSvc:  piutangSvc,
+		auditSvc:    auditSvcMw,
+		authStore:   authStore,
 	}
 
-	registerMasterRoutes(app, pool)
+	registerMasterRoutes(app, pool, sharedRepos)
 	registerPartnerRoutes(app, pool, sharedRepos)
 	registerSettingRoutes(app, pool, appSettingSvc, sharedRepos)
 	registerTransactionRoutes(app, pool, appSettingSvc, sharedRepos)
@@ -335,6 +409,8 @@ type sharedDeps struct {
 	mitraRepo   *repo.MitraRepo
 	piutangRepo *repo.PiutangRepo
 	piutangSvc  *service.PiutangService
+	auditSvc    *service.AuditLogService
+	authStore   *auth.Store
 }
 
 func registerAccountAndSearchRoutes(g *echo.Group, pool *pgxpool.Pool, sd sharedDeps) {
@@ -349,13 +425,16 @@ func registerAccountAndSearchRoutes(g *echo.Group, pool *pgxpool.Pool, sd shared
 
 	userAcctSvc := service.NewUserAccountService(userAcctRepo)
 	produkSvc := service.NewProdukService(produkRepo, satuanRepo)
+	produkSvc.SetAudit(sd.auditSvc)
 	mitraSvc := service.NewMitraService(mitraRepo)
+	mitraSvc.SetAudit(sd.auditSvc)
 	penjualanSvc := service.NewPenjualanService(penjualanRepo, produkRepo, mitraRepo, gudangRepo, satuanRepo, sd.piutangRepo)
+	penjualanSvc.SetAudit(sd.auditSvc)
 	auditSvc := service.NewAuditLogService(auditRepo)
 	gudangSvc := service.NewGudangService(gudangRepo)
 	printerSvc := service.NewPrinterTemplateService(printerRepo)
 
-	profileH := handler.NewProfileHandler(userAcctSvc, userAcctRepo, gudangRepo)
+	profileH := handler.NewProfileHandler(userAcctSvc, userAcctRepo, gudangRepo, sd.authStore)
 	auditH := handler.NewAuditLogHandler(auditSvc)
 	helpH := handler.NewHelpHandler()
 	searchH := handler.NewSearchHandler(produkSvc, mitraSvc, penjualanSvc)
@@ -384,7 +463,8 @@ func registerCollectionRoutes(g *echo.Group, pool *pgxpool.Pool, sd sharedDeps) 
 
 	mitraSvc := service.NewMitraService(mitraRepo)
 	piutangSvc := sd.piutangSvc
-	pembayaranSvc := service.NewPembayaranService(pembayaranRepo, penjualanRepo, mitraRepo, piutangRepo)
+	pembayaranSvc := service.NewPembayaranService(pool, pembayaranRepo, penjualanRepo, mitraRepo, piutangRepo)
+	pembayaranSvc.SetAudit(sd.auditSvc)
 	tabunganSvc := service.NewTabunganService(tabunganRepo, mitraRepo)
 
 	pembayaranH := handler.NewPembayaranHandler(pembayaranSvc, mitraSvc, piutangSvc)
@@ -403,9 +483,11 @@ func registerTransactionRoutes(g *echo.Group, pool *pgxpool.Pool, appSettingSvc 
 	gudangRepo := sd.gudangRepo
 
 	produkSvc := service.NewProdukService(produkRepo, satuanRepo)
+	produkSvc.SetAudit(sd.auditSvc)
 	satuanSvc := service.NewSatuanService(satuanRepo)
 	hargaSvc := service.NewHargaService(hargaRepo, produkRepo)
 	mitraSvc := service.NewMitraService(mitraRepo)
+	mitraSvc.SetAudit(sd.auditSvc)
 	supplierSvc := service.NewSupplierService(supplierRepo)
 	gudangSvc := service.NewGudangService(gudangRepo)
 
@@ -413,6 +495,7 @@ func registerTransactionRoutes(g *echo.Group, pool *pgxpool.Pool, appSettingSvc 
 	penjualanRepo := repo.NewPenjualanRepo(pool)
 	penjualanSvc := service.NewPenjualanService(penjualanRepo, produkRepo, mitraRepo, gudangRepo, satuanRepo, sd.piutangRepo)
 	penjualanSvc.SetAppSetting(appSettingSvc)
+	penjualanSvc.SetAudit(sd.auditSvc)
 	penjualanHandler := handler.NewPenjualanHandler(penjualanSvc, produkSvc, mitraSvc, gudangSvc, satuanSvc, hargaSvc, appSettingSvc)
 	handler.RegisterPenjualanRoutes(g, penjualanHandler)
 
@@ -420,28 +503,37 @@ func registerTransactionRoutes(g *echo.Group, pool *pgxpool.Pool, appSettingSvc 
 	mutasiRepo := repo.NewMutasiRepo(pool)
 	stokRepo := repo.NewStokRepo(pool)
 	mutasiSvc := service.NewMutasiService(mutasiRepo, stokRepo, produkRepo, gudangRepo, satuanRepo)
+	mutasiSvc.SetAudit(sd.auditSvc)
 	stokSvc := service.NewStokService(stokRepo, produkRepo, gudangRepo)
 	mutasiH := handler.NewMutasiHandler(mutasiSvc, gudangSvc, produkSvc, satuanSvc)
 	stokH := handler.NewStokHandler(stokSvc, produkSvc, gudangSvc)
-	handler.RegisterInventoryRoutes(g, mutasiH, stokH)
+
+	// Stok Adjustment (penyesuaian stok 1-step).
+	adjRepo := repo.NewAdjRepo(pool)
+	adjSvc := service.NewStokAdjustmentService(pool, adjRepo, produkRepo, satuanRepo, sd.auditSvc)
+	adjH := handler.NewStokAdjustmentHandler(adjSvc, gudangSvc, produkSvc, satuanSvc)
+
+	handler.RegisterInventoryRoutes(g, mutasiH, stokH, adjH)
 
 	// Pembelian + Opname
 	pembelianRepo := repo.NewPembelianRepo(pool)
 	bayarRepo := repo.NewPembayaranSupplierRepo(pool)
 	opnameRepo := repo.NewStokOpnameRepo(pool)
 	pembelianSvc := service.NewPembelianService(pembelianRepo, bayarRepo, supplierRepo, produkRepo, gudangRepo, satuanRepo)
+	pembelianSvc.SetAudit(sd.auditSvc)
 	opnameSvc := service.NewStokOpnameService(opnameRepo, gudangRepo)
 	pembelianH := handler.NewPembelianHandler(pembelianSvc, supplierSvc, produkSvc, gudangRepo, satuanRepo, supplierRepo)
 	opnameH := handler.NewStokOpnameHandler(opnameSvc, gudangRepo)
 	handler.RegisterProcurementRoutes(g, pembelianH, opnameH)
 }
 
-func registerMasterRoutes(g *echo.Group, pool *pgxpool.Pool) {
+func registerMasterRoutes(g *echo.Group, pool *pgxpool.Pool, sd sharedDeps) {
 	produkRepo := repo.NewProdukRepo(pool)
 	satuanRepo := repo.NewSatuanRepo(pool)
 	hargaRepo := repo.NewHargaRepo(pool)
 
 	produkSvc := service.NewProdukService(produkRepo, satuanRepo)
+	produkSvc.SetAudit(sd.auditSvc)
 	satuanSvc := service.NewSatuanService(satuanRepo)
 	hargaSvc := service.NewHargaService(hargaRepo, produkRepo)
 
@@ -459,6 +551,7 @@ func registerPartnerRoutes(g *echo.Group, pool *pgxpool.Pool, sd sharedDeps) {
 	supplierRepo := repo.NewSupplierRepo(pool)
 
 	mitraSvc := service.NewMitraService(mitraRepo)
+	mitraSvc.SetAudit(sd.auditSvc)
 	supplierSvc := service.NewSupplierService(supplierRepo)
 
 	mh := handler.NewMitraHandler(mitraSvc)
@@ -480,7 +573,7 @@ func registerSettingRoutes(g *echo.Group, pool *pgxpool.Pool, appSettingSvc *ser
 	handler.RegisterSettingRoutes(g, gh, uh, gudangRepo)
 
 	// Backup & Restore (owner only)
-	backupH := handler.NewBackupHandler()
+	backupH := handler.NewBackupHandler(sd.authStore)
 	bk := g.Group("/setting/backup", auth.RequireRole("owner"))
 	bk.GET("", backupH.Index)
 	bk.POST("/run", backupH.Trigger)
@@ -500,3 +593,111 @@ func registerSettingRoutes(g *echo.Group, pool *pgxpool.Pool, appSettingSvc *ser
 	sm.POST("", smtpH.Update)
 	sm.POST("/test", smtpH.Test)
 }
+
+
+// perIPRateLimiterWithSkipper - rate limiter dgn skipper.
+func perIPRateLimiterWithSkipper(perMinute, burst int, skip func(echo.Context) bool) echo.MiddlewareFunc {
+	store := echomw.NewRateLimiterMemoryStoreWithConfig(echomw.RateLimiterMemoryStoreConfig{
+		Rate: rate.Limit(float64(perMinute) / 60.0), Burst: burst, ExpiresIn: 3 * time.Minute,
+	})
+	return echomw.RateLimiterWithConfig(echomw.RateLimiterConfig{
+		Skipper: skip,
+		Store:   store,
+		IdentifierExtractor: func(c echo.Context) (string, error) { return c.RealIP(), nil },
+		ErrorHandler: func(c echo.Context, err error) error {
+			return c.String(http.StatusForbidden, "rate limit error")
+		},
+		DenyHandler: func(c echo.Context, identifier string, err error) error {
+			return c.String(http.StatusTooManyRequests, "too many requests")
+		},
+	})
+}
+
+// staticCacheControl - long cache untuk /static/*, no-cache untuk /sw.js.
+func staticCacheControl() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			p := c.Request().URL.Path
+			h := c.Response().Header()
+			switch {
+			case p == "/sw.js":
+				h.Set("Cache-Control", "no-cache, must-revalidate")
+			case strings.HasPrefix(p, "/static/"):
+				h.Set("Cache-Control", "public, max-age=31536000, immutable")
+			}
+			return next(c)
+		}
+	}
+}
+
+// promMiddleware - count requests + measure duration.
+func promMiddleware() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			start := time.Now()
+			err := next(c)
+			method := c.Request().Method
+			status := strconv.Itoa(c.Response().Status)
+			httpReqTotal.WithLabelValues(method, status).Inc()
+			httpDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+			return err
+		}
+	}
+}
+
+// metricsAuth - basic auth via env METRICS_USER/PASS, kalau kosong allow loopback only.
+func metricsAuth(pool *pgxpool.Pool) echo.MiddlewareFunc {
+	user := os.Getenv("METRICS_USER")
+	pass := os.Getenv("METRICS_PASS")
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			// Refresh pool stats on each scrape.
+			st := pool.Stat()
+			pgxAcquired.Set(float64(st.AcquiredConns()))
+			pgxIdle.Set(float64(st.IdleConns()))
+			pgxMax.Set(float64(st.MaxConns()))
+			if user != "" && pass != "" {
+				u, p, ok := c.Request().BasicAuth()
+				if !ok || subtle.ConstantTimeCompare([]byte(u), []byte(user)) != 1 || subtle.ConstantTimeCompare([]byte(p), []byte(pass)) != 1 {
+					c.Response().Header().Set("WWW-Authenticate", `Basic realm="metrics"`)
+					return c.NoContent(http.StatusUnauthorized)
+				}
+			} else {
+				ip := c.RealIP()
+				if ip != "127.0.0.1" && ip != "::1" && !strings.HasPrefix(ip, "172.") && !strings.HasPrefix(ip, "10.") && !strings.HasPrefix(ip, "192.168.") {
+					return c.NoContent(http.StatusForbidden)
+				}
+			}
+			return next(c)
+		}
+	}
+}
+
+// swHandler - serve sw.js dgn replace placeholder __BUILD_SHA__ runtime.
+var swCache struct {
+	once sync.Once
+	body []byte
+	err  error
+}
+
+func swHandler(c echo.Context) error {
+	swCache.once.Do(func() {
+		raw, err := os.ReadFile("web/static/js/sw.js")
+		if err != nil {
+			swCache.err = err
+			return
+		}
+		sha := os.Getenv("BUILD_SHA")
+		if sha == "" {
+			sha = time.Now().Format("20060102150405")
+		}
+		swCache.body = bytes.ReplaceAll(raw, []byte("__BUILD_SHA__"), []byte(sha))
+	})
+	if swCache.err != nil {
+		return swCache.err
+	}
+	c.Response().Header().Set("Cache-Control", "no-cache, must-revalidate")
+	c.Response().Header().Set("Service-Worker-Allowed", "/")
+	return c.Blob(http.StatusOK, "application/javascript; charset=utf-8", swCache.body)
+}
+

@@ -21,9 +21,9 @@ import (
 
 // PembayaranHandler menangani routes /pembayaran/* + /mitra/:id/pembayaran.
 type PembayaranHandler struct {
-	svc       *service.PembayaranService
-	mitraSvc  *service.MitraService
-	piutang   *service.PiutangService
+	svc      *service.PembayaranService
+	mitraSvc *service.MitraService
+	piutang  *service.PiutangService
 }
 
 // NewPembayaranHandler konstruktor.
@@ -106,6 +106,13 @@ func (h *PembayaranHandler) MitraHistory(c echo.Context) error {
 	m, err := h.mitraSvc.Get(ctx, id)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "Mitra tidak ditemukan")
+	}
+	// Scope: non-owner/admin hanya boleh lihat history mitra yg gudang_default-nya
+	// sama dengan gudang user. Mitra tanpa gudang_default → hanya owner/admin.
+	if !isPrivilegedRole(user.Role) {
+		if m.GudangDefaultID == nil || user.GudangID == nil || *m.GudangDefaultID != *user.GudangID {
+			return echo.NewHTTPError(http.StatusForbidden, "akses ditolak")
+		}
 	}
 
 	page, _ := strconv.Atoi(c.QueryParam("page"))

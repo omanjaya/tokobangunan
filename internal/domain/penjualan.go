@@ -11,12 +11,15 @@ import (
 type StatusBayar string
 
 const (
-	StatusLunas    StatusBayar = "lunas"
-	StatusKredit   StatusBayar = "kredit"
-	StatusSebagian StatusBayar = "sebagian"
+	StatusLunas           StatusBayar = "lunas"
+	StatusKredit          StatusBayar = "kredit"
+	StatusSebagian        StatusBayar = "sebagian"
+	StatusBayarDibatalkan StatusBayar = "dibatalkan"
 )
 
 // IsValidStatusBayar cek apakah string masuk whitelist.
+// Status "dibatalkan" tidak termasuk valid untuk input baru — diset oleh
+// service.Cancel saja.
 func IsValidStatusBayar(s string) bool {
 	switch StatusBayar(s) {
 	case StatusLunas, StatusKredit, StatusSebagian:
@@ -35,6 +38,8 @@ var (
 	ErrJatuhTempoWajib       = errors.New("jatuh tempo wajib diisi untuk kredit/sebagian")
 	ErrItemQtyInvalid        = errors.New("qty item harus > 0")
 	ErrItemHargaInvalid      = errors.New("harga satuan tidak valid")
+	ErrInvoiceLocked         = errors.New("invoice tidak bisa diubah karena sudah ada pembayaran")
+	ErrInvoiceDibatalkan     = errors.New("invoice sudah dibatalkan")
 )
 
 // Penjualan - header transaksi penjualan.
@@ -60,6 +65,11 @@ type Penjualan struct {
 	ClientUUID uuid.UUID
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+
+	// Cancel metadata (nullable). Diisi oleh service.Cancel.
+	CanceledAt   *time.Time
+	CanceledBy   *int64
+	CancelReason *string
 }
 
 // PenjualanItem - baris item, dengan snapshot nama produk & kode satuan.

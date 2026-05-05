@@ -3,7 +3,10 @@
 package handler
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -12,6 +15,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/labstack/echo/v4"
 
@@ -20,19 +25,33 @@ import (
 	"github.com/omanjaya/tokobangunan/internal/view/setting/backup"
 )
 
+// restorePhrase — string konfirmasi yang user wajib ketik untuk restore.
+const restorePhrase = "RESTORE DATABASE"
+
+// restoreLockFile — sentinel file penanda restore sedang berjalan.
+const restoreLockFile = "tmp/restore.lock"
+
+// restoreTimeout — batas atas eksekusi script restore.
+const restoreTimeout = 10 * time.Minute
+
+// restoreMu — mutex proses untuk single-instance restore.
+var restoreMu sync.Mutex
+
 // BackupHandler ekspose halaman & aksi backup.
 type BackupHandler struct {
 	dir         string // direktori backup, default ./backups
 	scriptPath  string // path script backup
 	restorePath string // path script restore
+	authStore   *auth.Store
 }
 
 // NewBackupHandler — config dengan defaults.
-func NewBackupHandler() *BackupHandler {
+func NewBackupHandler(authStore *auth.Store) *BackupHandler {
 	return &BackupHandler{
 		dir:         envOr("BACKUP_DIR", "./backups"),
 		scriptPath:  envOr("BACKUP_SCRIPT", "scripts/backup.sh"),
 		restorePath: envOr("RESTORE_SCRIPT", "scripts/restore.sh"),
+		authStore:   authStore,
 	}
 }
 
@@ -52,12 +71,13 @@ func (h *BackupHandler) Index(c echo.Context) error {
 	user := auth.CurrentUser(c)
 	csrf, _ := c.Get("csrf").(string)
 	props := backup.IndexProps{
-		Nav:       layout.DefaultNav("/setting"),
-		User:      userData(user),
-		Files:     files,
-		CSRFToken: csrf,
-		Flash:     c.QueryParam("flash"),
-		Error:     c.QueryParam("error"),
+		Nav:           layout.DefaultNav("/setting"),
+		User:          userData(user),
+		Files:         files,
+		CSRFToken:     csrf,
+		Flash:         c.QueryParam("flash"),
+		Error:         c.QueryParam("error"),
+		RestorePhrase: restorePhrase,
 	}
 	return RenderHTML(c, http.StatusOK, backup.Index(props))
 }
@@ -89,7 +109,20 @@ func (h *BackupHandler) Download(c echo.Context) error {
 }
 
 // Restore POST /setting/backup/:filename/restore — DESTRUCTIVE.
+//
+// Multi-layer guard:
+//  1. CSRF (echo middleware)
+//  2. confirm_phrase wajib match konstanta restorePhrase
+//  3. password_confirmation diverifikasi ulang via auth.VerifyPassword
+//  4. lock file tmp/restore.lock + global mutex (single-instance)
+//  5. timeout context 10 menit untuk script restore
 func (h *BackupHandler) Restore(c echo.Context) error {
+	ctx := c.Request().Context()
+	cur := auth.CurrentUser(c)
+	if cur == nil {
+		return echo.NewHTTPError(http.StatusUnauthorized)
+	}
+
 	name := safeBackupName(c.Param("filename"))
 	if name == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "nama file tidak valid")
@@ -98,12 +131,70 @@ func (h *BackupHandler) Restore(c echo.Context) error {
 	if _, err := os.Stat(full); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "backup tidak ditemukan")
 	}
-	cmd := exec.CommandContext(c.Request().Context(), "bash", h.restorePath, full)
+
+	phrase := strings.TrimSpace(c.FormValue("confirm_phrase"))
+	password := c.FormValue("password_confirmation")
+
+	if phrase != restorePhrase {
+		slog.WarnContext(ctx, "restore denied: phrase mismatch",
+			"user_id", cur.ID, "username", cur.Username, "file", name,
+			"remote", c.Request().RemoteAddr)
+		return c.Redirect(http.StatusSeeOther,
+			"/setting/backup?error="+url.QueryEscape("Frasa konfirmasi tidak sesuai."))
+	}
+	if password == "" {
+		return c.Redirect(http.StatusSeeOther,
+			"/setting/backup?error="+url.QueryEscape("Password wajib diisi untuk restore."))
+	}
+
+	ok, verr := auth.VerifyPassword(password, cur.PasswordHash)
+	if verr != nil || !ok {
+		slog.WarnContext(ctx, "restore denied: password mismatch",
+			"user_id", cur.ID, "username", cur.Username, "file", name,
+			"remote", c.Request().RemoteAddr)
+		return c.Redirect(http.StatusSeeOther,
+			"/setting/backup?error="+url.QueryEscape("Password salah."))
+	}
+
+	// Single-instance guard: mutex + lock file.
+	if !restoreMu.TryLock() {
+		return echo.NewHTTPError(http.StatusConflict, "restore sedang berjalan")
+	}
+	defer restoreMu.Unlock()
+
+	if _, err := os.Stat(restoreLockFile); err == nil {
+		return echo.NewHTTPError(http.StatusConflict, "restore sedang berjalan")
+	}
+	if err := os.MkdirAll(filepath.Dir(restoreLockFile), 0o755); err != nil {
+		return fmt.Errorf("mkdir tmp: %w", err)
+	}
+	lf, err := os.OpenFile(restoreLockFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return echo.NewHTTPError(http.StatusConflict, "restore sedang berjalan")
+		}
+		return fmt.Errorf("create lock: %w", err)
+	}
+	_ = lf.Close()
+	defer func() { _ = os.Remove(restoreLockFile) }()
+
+	slog.InfoContext(ctx, "restore start",
+		"user_id", cur.ID, "username", cur.Username, "file", name)
+
+	runCtx, cancel := context.WithTimeout(ctx, restoreTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(runCtx, "bash", h.restorePath, full)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		slog.ErrorContext(ctx, "restore failed",
+			"user_id", cur.ID, "file", name, "error", err)
 		return c.Redirect(http.StatusSeeOther,
 			"/setting/backup?error="+url.QueryEscape("Restore gagal: "+truncate(string(out), 200)))
 	}
+
+	slog.InfoContext(ctx, "restore success",
+		"user_id", cur.ID, "username", cur.Username, "file", name)
 	return c.Redirect(http.StatusSeeOther, "/setting/backup?flash=Restore+berhasil")
 }
 
@@ -123,7 +214,7 @@ func (h *BackupHandler) listFiles() ([]backup.FileInfo, error) {
 			continue
 		}
 		name := e.Name()
-		if !strings.HasSuffix(name, ".dump") {
+		if !isBackupFile(name) {
 			continue
 		}
 		info, err := e.Info()
@@ -140,8 +231,16 @@ func (h *BackupHandler) listFiles() ([]backup.FileInfo, error) {
 	return out, nil
 }
 
+// isBackupFile — accept .dump, .dump.gz, .dump.gz.gpg.
+func isBackupFile(name string) bool {
+	return strings.HasSuffix(name, ".dump") ||
+		strings.HasSuffix(name, ".dump.gz") ||
+		strings.HasSuffix(name, ".dump.gz.gpg")
+}
+
 // safeBackupRe — whitelist karakter aman untuk nama backup file.
-var safeBackupRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+\.dump$`)
+// Allow .dump, .dump.gz, .dump.gz.gpg.
+var safeBackupRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+\.dump(\.gz(\.gpg)?)?$`)
 
 // safeBackupName tolak path traversal & karakter aneh, hanya allow basename.
 func safeBackupName(s string) string {

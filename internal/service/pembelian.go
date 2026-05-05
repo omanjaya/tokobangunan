@@ -14,12 +14,33 @@ import (
 
 // PembelianService orchestrasi use case pembelian + pembayaran supplier.
 type PembelianService struct {
-	pembelianRepo  *repo.PembelianRepo
-	bayarRepo      *repo.PembayaranSupplierRepo
-	supplierRepo   *repo.SupplierRepo
-	produkRepo     *repo.ProdukRepo
-	gudangRepo     *repo.GudangRepo
-	satuanRepo     *repo.SatuanRepo
+	pembelianRepo *repo.PembelianRepo
+	bayarRepo     *repo.PembayaranSupplierRepo
+	supplierRepo  *repo.SupplierRepo
+	produkRepo    *repo.ProdukRepo
+	gudangRepo    *repo.GudangRepo
+	satuanRepo    *repo.SatuanRepo
+	audit         *AuditLogService // optional; nil-safe
+}
+
+// SetAudit attach AuditLogService (best-effort).
+func (s *PembelianService) SetAudit(a *AuditLogService) { s.audit = a }
+
+func (s *PembelianService) logAudit(ctx context.Context, userID int64, aksi, tabel string, id int64, before, after any) {
+	if s.audit == nil {
+		return
+	}
+	uid := userID
+	var uidp *int64
+	if uid > 0 {
+		uidp = &uid
+	} else if v := AuditUserFromContext(ctx); v > 0 {
+		uidp = &v
+	}
+	_ = s.audit.Record(ctx, RecordEntry{
+		UserID: uidp, Aksi: aksi, Tabel: tabel, RecordID: id,
+		Before: before, After: after,
+	})
 }
 
 // NewPembelianService konstruktor.
@@ -137,6 +158,14 @@ func (s *PembelianService) Create(ctx context.Context, in dto.PembelianCreateInp
 	if err := s.pembelianRepo.Create(ctx, p); err != nil {
 		return nil, err
 	}
+	s.logAudit(ctx, userID, "create", "pembelian", p.ID, nil, map[string]any{
+		"nomor_pembelian": p.NomorPembelian,
+		"tanggal":         p.Tanggal,
+		"supplier_id":     p.SupplierID,
+		"gudang_id":       p.GudangID,
+		"total":           p.Total,
+		"status_bayar":    string(p.StatusBayar),
+	})
 	return p, nil
 }
 
@@ -197,6 +226,13 @@ func (s *PembelianService) RecordPayment(ctx context.Context, in dto.PembayaranS
 			return p, err
 		}
 	}
+	s.logAudit(ctx, userID, "create", "pembayaran_supplier", p.ID, nil, map[string]any{
+		"pembelian_id": p.PembelianID,
+		"supplier_id":  p.SupplierID,
+		"tanggal":      p.Tanggal,
+		"jumlah":       p.Jumlah,
+		"metode":       p.Metode,
+	})
 	return p, nil
 }
 

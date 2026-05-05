@@ -49,17 +49,25 @@ func (h *AuthHandler) Login(c echo.Context) error {
 	ctx := c.Request().Context()
 	user, err := h.store.Authenticate(ctx, username, password)
 	if err != nil {
-		var msg string
+		// Generic message untuk semua kasus credential (mitigasi user enumeration
+		// & info leak akun-terkunci). Detail granular hanya di log internal.
+		const genericMsg = "Username atau password salah."
+		msg := genericMsg
+		status := http.StatusUnauthorized
 		switch {
 		case errors.Is(err, auth.ErrInvalidCredential):
-			msg = "Username atau password salah."
+			slog.WarnContext(ctx, "login failed: invalid credential",
+				"username", username, "remote", c.Request().RemoteAddr)
 		case errors.Is(err, auth.ErrUserLocked):
-			msg = "Akun dikunci sementara karena terlalu banyak percobaan gagal. Coba lagi nanti."
+			slog.WarnContext(ctx, "login failed: account locked",
+				"username", username, "remote", c.Request().RemoteAddr)
 		default:
-			slog.ErrorContext(ctx, "authenticate failed", "error", err)
+			slog.ErrorContext(ctx, "authenticate failed",
+				"error", err, "username", username)
 			msg = "Terjadi kesalahan, silakan coba lagi."
+			status = http.StatusInternalServerError
 		}
-		return render(c, http.StatusUnauthorized, authview.Login(authview.LoginProps{
+		return render(c, status, authview.Login(authview.LoginProps{
 			Username:  username,
 			CSRFToken: csrfToken,
 			Error:     msg,
@@ -96,7 +104,13 @@ func (h *AuthHandler) Logout(c echo.Context) error {
 		}
 	}
 	auth.ClearSessionCookie(c, h.secure)
-	return c.Redirect(http.StatusSeeOther, "/login")
+	// Clear-Site-Data: instruksi browser untuk hapus storage (localStorage,
+	// sessionStorage, IndexedDB), cache, dan cookie. Hanya berlaku di HTTPS
+	// untuk sebagian besar browser; di HTTP modern Chrome/Firefox akan
+	// mengabaikan tanpa error. Sebagai fallback, query ?logout=1 dipakai
+	// JS untuk cleanup di sisi klien (lihat web/static/js/app.js).
+	c.Response().Header().Set("Clear-Site-Data", `"storage", "cache"`)
+	return c.Redirect(http.StatusSeeOther, "/login?logout=1")
 }
 
 func remoteIP(addr string) net.IP {

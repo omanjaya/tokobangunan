@@ -124,6 +124,36 @@ templ shareActions(penjualanID int64, mitraKontakStr, mitraEmailStr string) {
   </div>
 }
 
+templ cancelModal(p ShowProps) {
+  {{ idStr := fmt.Sprintf("%d", p.Penjualan.ID) }}
+  <div x-data="{ open: false }" @open-cancel-modal.window="open = true">
+    <div x-show="open" x-cloak
+         class="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4">
+      <form method="post" action={ templ.SafeURL("/penjualan/" + idStr + "/cancel") }
+            class="bg-white rounded-lg shadow-xl w-full max-w-md p-5 space-y-3">
+        <h3 class="text-lg font-semibold text-rose-700">Batalkan Penjualan</h3>
+        <p class="text-sm text-slate-600">
+          Tindakan ini akan mengembalikan stok ke gudang dan menandai invoice
+          sebagai dibatalkan. Tidak dapat di-undo via UI.
+        </p>
+        <input type="hidden" name="csrf_token" value={ p.CSRFToken }/>
+        <label class="block text-sm">
+          <span class="text-slate-700">Alasan pembatalan <span class="text-rose-600">*</span></span>
+          <textarea name="cancel_reason" rows="3" required
+                    class="input mt-1"
+                    placeholder="Mis. salah input, customer batalkan, dll"></textarea>
+        </label>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" class="btn-ghost btn-md" @click="open = false">Batal</button>
+          <button type="submit" class="btn-primary btn-md bg-rose-600 hover:bg-rose-700">
+            Konfirmasi Batalkan
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+}
+
 templ Show(p ShowProps) {
   @layout.AppShell(layout.AppShellProps{
     Title: "Detail Penjualan",
@@ -136,6 +166,20 @@ templ Show(p ShowProps) {
     },
   }) {
     @components.PageHeader("Detail Penjualan", p.Penjualan.NomorKwitansi) {
+      if p.CanEdit {
+        @components.Button(components.ButtonProps{
+          Variant: "secondary",
+          Href:    fmt.Sprintf("/penjualan/%d/edit", p.Penjualan.ID),
+        }) {
+          @icon.Render("pencil", 14, "")
+          <span>Edit</span>
+        }
+        <button type="button" class="btn-secondary btn-md text-rose-700"
+                @click="$dispatch('open-cancel-modal')">
+          @icon.Render("x-circle", 14, "")
+          <span>Batalkan</span>
+        </button>
+      }
       @components.Button(components.ButtonProps{
         Variant: "secondary",
         Href:    fmt.Sprintf("/penjualan/baru?from=%d", p.Penjualan.ID),
@@ -180,6 +224,23 @@ templ Show(p ShowProps) {
         </div>
       </div>
       @shareActions(p.Penjualan.ID, mitraKontak(p.Mitra), mitraEmail(p.Mitra))
+    }
+
+    if p.Penjualan.StatusBayar == domain.StatusBayarDibatalkan {
+      <div class="rounded-lg border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800 mb-4">
+        <div class="font-semibold">Invoice Dibatalkan</div>
+        if p.Penjualan.CancelReason != nil && *p.Penjualan.CancelReason != "" {
+          <div class="mt-1">Alasan: { *p.Penjualan.CancelReason }</div>
+        }
+      </div>
+    } else if p.HasPembayaran {
+      <div class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 mb-4">
+        Tidak bisa diedit atau dibatalkan karena sudah ada pembayaran tercatat.
+      </div>
+    }
+
+    if p.CanEdit {
+      @cancelModal(p)
     }
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">

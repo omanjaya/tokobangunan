@@ -74,16 +74,7 @@ templ Index(p IndexProps) {
                         @icon.Download(14, "")
                         <span>Download</span>
                       </a>
-                      @components.ConfirmForm(components.ConfirmFormProps{
-                        Action:      "/setting/backup/" + f.Name + "/restore",
-                        Title:       "Restore Database",
-                        Message:     "Restore dari " + f.Name + "? SEMUA data saat ini akan ditimpa. Aksi ini TIDAK bisa dibatalkan.",
-                        ConfirmText: "Restore Sekarang",
-                        Variant:     "danger",
-                        Trigger:     "Restore",
-                        TriggerVar:  "danger",
-                        CSRFToken:   p.CSRFToken,
-                      })
+                      @restoreModal(f.Name, p.RestorePhrase, p.CSRFToken)
                     </div>
                   </td>
                 </tr>
@@ -94,4 +85,61 @@ templ Index(p IndexProps) {
       }
     }
   }
+}
+
+// restoreModal — 2-step confirm: user wajib ketik phrase persis + isi password
+// untuk men-submit form. Tombol Restore di-disable sampai dua syarat terpenuhi.
+templ restoreModal(filename, phrase, csrf string) {
+  <div
+    x-data={ "{ open: false, phrase: '', password: '', expected: '" + phrase + "' }" }
+    @keydown.escape.window="open = false"
+    class="inline-block"
+  >
+    <button type="button" @click="open = true" class="btn btn-danger btn-sm">Restore</button>
+    <div x-show="open" x-cloak x-transition.opacity
+         class="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+         @click.self="open = false" role="dialog" aria-modal="true">
+      <div x-show="open"
+           x-transition:enter="transition ease-out duration-150"
+           x-transition:enter-start="opacity-0 scale-95"
+           x-transition:enter-end="opacity-100 scale-100"
+           class="w-full max-w-md rounded-2xl bg-white shadow-xl border border-slate-200 overflow-hidden">
+        <div class="p-5">
+          <div class="flex items-start gap-3">
+            <span class="inline-flex h-10 w-10 items-center justify-center rounded-full shrink-0 bg-rose-50 text-rose-600">
+              @icon.AlertTriangle(20, "")
+            </span>
+            <div class="flex-1 min-w-0">
+              <h3 class="text-base font-semibold text-slate-900">Restore Database</h3>
+              <p class="text-sm text-slate-600 mt-1">
+                Restore dari <span class="font-mono">{ filename }</span>?
+                SEMUA data saat ini akan ditimpa. Aksi ini TIDAK bisa dibatalkan.
+              </p>
+              <div class="mt-3">
+                <label class="block text-xs text-slate-500 mb-1">
+                  Ketik <span class="font-mono text-slate-900">{ phrase }</span> untuk konfirmasi
+                </label>
+                <input type="text" x-model="phrase" class="input h-9 text-sm w-full" autocomplete="off"/>
+              </div>
+              <div class="mt-3">
+                <label class="block text-xs text-slate-500 mb-1">Password akun Anda</label>
+                <input type="password" x-model="password" class="input h-9 text-sm w-full" autocomplete="current-password"/>
+              </div>
+            </div>
+          </div>
+        </div>
+        <form method="post" action={ templ.SafeURL("/setting/backup/" + filename + "/restore") }
+              class="flex items-center justify-end gap-2 px-5 py-3 bg-slate-50 border-t border-slate-100">
+          <input type="hidden" name="csrf_token" value={ csrf }/>
+          <input type="hidden" name="confirm_phrase" :value="phrase"/>
+          <input type="hidden" name="password_confirmation" :value="password"/>
+          <button type="button" class="btn btn-secondary btn-sm" @click="open = false">Batal</button>
+          <button type="submit" class="btn btn-danger btn-sm"
+                  :disabled="phrase !== expected || password.length === 0">
+            Restore Sekarang
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
 }

@@ -235,17 +235,174 @@ func (h *PenjualanHandler) Show(c echo.Context) error {
 		}
 		return err
 	}
+	if err := enforceGudangScope(c, pj.GudangID); err != nil {
+		return err
+	}
 	mitra, _ := h.mitra.Get(ctx, pj.MitraID)
 	gudang, _ := h.gudang.Get(ctx, pj.GudangID)
+	hasPay, _ := h.penjualan.HasPembayaran(ctx, pj.ID, pj.Tanggal)
+
+	canEdit := !hasPay && pj.StatusBayar != domain.StatusBayarDibatalkan
+	if u := auth.CurrentUser(c); u == nil || !isPrivilegedRole(u.Role) {
+		canEdit = false
+	}
 
 	props := penjualanview.ShowProps{
-		Nav:       layout.DefaultNav("/penjualan"),
-		User:      penjualanUserData(c),
-		Penjualan: pj,
-		Mitra:     mitra,
-		Gudang:    gudang,
+		Nav:           layout.DefaultNav("/penjualan"),
+		User:          penjualanUserData(c),
+		Penjualan:     pj,
+		Mitra:         mitra,
+		Gudang:        gudang,
+		HasPembayaran: hasPay,
+		CanEdit:       canEdit,
+		CSRFToken:     csrfFromContext(c),
 	}
 	return RenderHTML(c, http.StatusOK, penjualanview.Show(props))
+}
+
+// Edit GET /penjualan/:id/edit (owner/admin).
+func (h *PenjualanHandler) Edit(c echo.Context) error {
+	id, err := pathID(c)
+	if err != nil {
+		return err
+	}
+	ctx := c.Request().Context()
+	pj, err := h.penjualan.Get(ctx, id)
+	if err != nil {
+		if errors.Is(err, domain.ErrPenjualanNotFound) {
+			return echo.NewHTTPError(http.StatusNotFound, "penjualan tidak ditemukan")
+		}
+		return err
+	}
+	if err := enforceGudangScope(c, pj.GudangID); err != nil {
+		return err
+	}
+	if pj.StatusBayar == domain.StatusBayarDibatalkan {
+		return c.Redirect(http.StatusSeeOther, "/penjualan/"+strconv.FormatInt(pj.ID, 10))
+	}
+	hasPay, err := h.penjualan.HasPembayaran(ctx, pj.ID, pj.Tanggal)
+	if err != nil {
+		return err
+	}
+	if hasPay {
+		return c.Redirect(http.StatusSeeOther, "/penjualan/"+strconv.FormatInt(pj.ID, 10))
+	}
+
+	mitraNama := ""
+	if m, err := h.mitra.Get(ctx, pj.MitraID); err == nil {
+		mitraNama = m.Nama
+	}
+
+	in := dto.PenjualanCreateInput{
+		Tanggal:     pj.Tanggal.Format("2006-01-02"),
+		MitraID:     pj.MitraID,
+		GudangID:    pj.GudangID,
+		Diskon:      pj.Diskon / 100,
+		StatusBayar: string(pj.StatusBayar),
+		Catatan:     pj.Catatan,
+		ClientUUID:  pj.ClientUUID.String(),
+		PPNEnabled:  pj.PPNAmount > 0,
+	}
+	if pj.JatuhTempo != nil {
+		in.JatuhTempo = pj.JatuhTempo.Format("2006-01-02")
+	}
+	for _, it := range pj.Items {
+		in.Items = append(in.Items, dto.PenjualanItemInput{
+			ProdukID:    it.ProdukID,
+			Qty:         it.Qty,
+			SatuanID:    it.SatuanID,
+			HargaSatuan: it.HargaSatuan / 100,
+			Diskon:      it.Diskon / 100,
+		})
+	}
+
+	gudangs, err := h.gudangLite(c)
+	if err != nil {
+		return err
+	}
+	ppnAvail, ppnPersen := h.pajakUI(c)
+	props := penjualanview.FormProps{
+		Nav:          layout.DefaultNav("/penjualan"),
+		User:         penjualanUserData(c),
+		Input:        in,
+		Gudangs:      gudangs,
+		MitraNama:    mitraNama,
+		ClientUUID:   in.ClientUUID,
+		PPNAvailable: ppnAvail,
+		PPNPersen:    ppnPersen,
+		EditID:       pj.ID,
+	}
+	return RenderHTML(c, http.StatusOK, penjualanview.Form(props))
+}
+
+// Update POST /penjualan/:id (owner/admin).
+func (h *PenjualanHandler) Update(c echo.Context) error {
+	id, err := pathID(c)
+	if err != nil {
+		return err
+	}
+	in, err := bindPenjualanForm(c)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	u := auth.CurrentUser(c)
+	if u == nil {
+		return echo.NewHTTPError(http.StatusUnauthorized, "user tidak terautentikasi")
+	}
+	ctx := c.Request().Context()
+	if err := h.penjualan.Update(ctx, id, in, u.ID); err != nil {
+		return h.renderEditError(c, id, in, err)
+	}
+	target := "/penjualan/" + strconv.FormatInt(id, 10)
+	if c.Request().Header.Get("HX-Request") == "true" {
+		c.Response().Header().Set("HX-Redirect", target)
+		return c.NoContent(http.StatusOK)
+	}
+	return c.Redirect(http.StatusSeeOther, target)
+}
+
+// Cancel POST /penjualan/:id/cancel (owner/admin).
+func (h *PenjualanHandler) Cancel(c echo.Context) error {
+	id, err := pathID(c)
+	if err != nil {
+		return err
+	}
+	u := auth.CurrentUser(c)
+	if u == nil {
+		return echo.NewHTTPError(http.StatusUnauthorized, "user tidak terautentikasi")
+	}
+	alasan := strings.TrimSpace(c.FormValue("cancel_reason"))
+	if err := h.penjualan.Cancel(c.Request().Context(), id, u.ID, alasan); err != nil {
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, humanizePenjualanError(err))
+	}
+	return c.Redirect(http.StatusSeeOther, "/penjualan/"+strconv.FormatInt(id, 10))
+}
+
+func (h *PenjualanHandler) renderEditError(c echo.Context, id int64, in dto.PenjualanCreateInput, err error) error {
+	gudangs, lerr := h.gudangLite(c)
+	if lerr != nil {
+		return lerr
+	}
+	ppnAvail, ppnPersen := h.pajakUI(c)
+	props := penjualanview.FormProps{
+		Nav:          layout.DefaultNav("/penjualan"),
+		User:         penjualanUserData(c),
+		Input:        in,
+		Gudangs:      gudangs,
+		ClientUUID:   in.ClientUUID,
+		PPNAvailable: ppnAvail,
+		PPNPersen:    ppnPersen,
+		EditID:       id,
+	}
+	if fes, ok := dto.CollectFieldErrors(err); ok {
+		props.Errors = fes
+	} else {
+		props.General = humanizePenjualanError(err)
+	}
+	if c.Request().Header.Get("HX-Request") == "true" {
+		return RenderHTML(c, http.StatusUnprocessableEntity, penjualanview.FormCard(props))
+	}
+	return RenderHTML(c, http.StatusUnprocessableEntity, penjualanview.Form(props))
 }
 
 // SearchMitraJSON GET /penjualan/search-mitra?q=...
@@ -277,8 +434,16 @@ func (h *PenjualanHandler) SearchProdukJSON(c echo.Context) error {
 	ctx := c.Request().Context()
 	q := strings.TrimSpace(c.QueryParam("q"))
 
-	// Resolve gudang dari query, fallback ke gudang user aktif.
+	// Resolve gudang. Non-owner/admin: paksa pakai gudang user (cegah leak
+	// stok/harga gudang lain via query param).
 	gudangID, _ := strconv.ParseInt(c.QueryParam("gudang_id"), 10, 64)
+	if u := auth.CurrentUser(c); u != nil && !isPrivilegedRole(u.Role) {
+		if u.GudangID != nil {
+			gudangID = *u.GudangID
+		} else {
+			gudangID = 0
+		}
+	}
 	if gudangID <= 0 {
 		if u := auth.CurrentUser(c); u != nil && u.GudangID != nil {
 			gudangID = *u.GudangID
@@ -454,6 +619,10 @@ func humanizePenjualanError(err error) string {
 		return "Gudang tidak ditemukan atau tidak aktif."
 	case errors.Is(err, domain.ErrProdukNotFound):
 		return "Salah satu produk tidak ditemukan."
+	case errors.Is(err, domain.ErrInvoiceLocked):
+		return "Invoice tidak bisa diubah karena sudah ada pembayaran."
+	case errors.Is(err, domain.ErrInvoiceDibatalkan):
+		return "Invoice sudah dibatalkan."
 	default:
 		return "Gagal menyimpan penjualan: " + err.Error()
 	}
@@ -486,6 +655,7 @@ func bindPenjualanForm(c echo.Context) (dto.PenjualanCreateInput, error) {
 		Qty         string
 		SatuanID    string
 		HargaSatuan string
+		Diskon      string
 	}
 	indexed := map[int]*rawItem{}
 	for k, vals := range form {
@@ -516,6 +686,8 @@ func bindPenjualanForm(c echo.Context) (dto.PenjualanCreateInput, error) {
 			row.SatuanID = vals[0]
 		case "HargaSatuan":
 			row.HargaSatuan = vals[0]
+		case "Diskon":
+			row.Diskon = vals[0]
 		}
 	}
 	// Sort by index ascending.
@@ -537,14 +709,21 @@ func bindPenjualanForm(c echo.Context) (dto.PenjualanCreateInput, error) {
 		qty, _ := strconv.ParseFloat(row.Qty, 64)
 		sid, _ := strconv.ParseInt(row.SatuanID, 10, 64)
 		harga, _ := strconv.ParseInt(row.HargaSatuan, 10, 64)
+		diskon, _ := strconv.ParseInt(row.Diskon, 10, 64)
 		in.Items = append(in.Items, dto.PenjualanItemInput{
 			ProdukID:    pid,
 			Qty:         qty,
 			SatuanID:    sid,
 			HargaSatuan: harga,
+			Diskon:      diskon,
 		})
 	}
 	return in, nil
+}
+
+func csrfFromContext(c echo.Context) string {
+	v, _ := c.Get("csrf").(string)
+	return v
 }
 
 func penjualanUserData(c echo.Context) layout.UserData {

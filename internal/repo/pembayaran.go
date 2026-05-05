@@ -61,8 +61,24 @@ func scanPembayaran(row pgx.Row, p *domain.Pembayaran) error {
 	return nil
 }
 
+// pembayaranQuerier abstraksi pool/tx untuk Create yang reusable.
+type pembayaranQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 // Create insert satu pembayaran. Trigger DB akan recompute status_bayar penjualan.
 func (r *PembayaranRepo) Create(ctx context.Context, p *domain.Pembayaran) error {
+	return r.createOn(ctx, r.pool, p)
+}
+
+// CreateInTx insert satu pembayaran di dalam transaksi. Caller bertanggung
+// jawab melakukan FOR UPDATE pada penjualan + sum existing pembayaran lebih
+// dulu di tx yang sama supaya pencegahan overpayment race-condition aktif.
+func (r *PembayaranRepo) CreateInTx(ctx context.Context, tx pgx.Tx, p *domain.Pembayaran) error {
+	return r.createOn(ctx, tx, p)
+}
+
+func (r *PembayaranRepo) createOn(ctx context.Context, q pembayaranQuerier, p *domain.Pembayaran) error {
 	const sql = `INSERT INTO pembayaran
 		(penjualan_id, penjualan_tanggal, mitra_id, tanggal, jumlah, metode,
 		 referensi, user_id, catatan, client_uuid)
@@ -76,7 +92,7 @@ func (r *PembayaranRepo) Create(ctx context.Context, p *domain.Pembayaran) error
 	if v := strings.TrimSpace(p.Catatan); v != "" {
 		catatan = &v
 	}
-	err := r.pool.QueryRow(ctx, sql,
+	err := q.QueryRow(ctx, sql,
 		p.PenjualanID, p.PenjualanTanggal, p.MitraID, p.Tanggal, p.Jumlah,
 		string(p.Metode), ref, p.UserID, catatan, p.ClientUUID,
 	).Scan(&p.ID, &p.CreatedAt)

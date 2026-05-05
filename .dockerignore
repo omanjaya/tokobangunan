@@ -1,0 +1,15 @@
+.git
+.github
+tmp/
+node_modules/
+*.test
+.env
+.env.*
+!.env.example
+docker-compose*.yml
+Dockerfile*
+!Dockerfile
+docs/
+*.md
+bin/
+coverage.out

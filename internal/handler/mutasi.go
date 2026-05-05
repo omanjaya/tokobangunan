@@ -64,6 +64,20 @@ func (h *MutasiHandler) Index(c echo.Context) error {
 		filter.Status = &v
 	}
 
+	// Scope: non-owner/admin hanya lihat mutasi yg melibatkan gudangnya
+	// (asal ATAU tujuan). Override input user.
+	if u := auth.CurrentUser(c); u != nil && !isPrivilegedRole(u.Role) {
+		filter.GudangAsalID = nil
+		filter.GudangTujuanID = nil
+		if u.GudangID != nil {
+			gid := *u.GudangID
+			filter.UserScopeGudangID = &gid
+		} else {
+			impossible := int64(1 << 62)
+			filter.UserScopeGudangID = &impossible
+		}
+	}
+
 	res, err := h.mutasi.List(ctx, filter)
 	if err != nil {
 		return err
@@ -204,6 +218,17 @@ func (h *MutasiHandler) transition(c echo.Context, fn func(context.Context, int6
 	if user == nil {
 		return echo.NewHTTPError(http.StatusUnauthorized, "tidak terautentikasi")
 	}
+	// Scope: user hanya boleh transisi mutasi yg melibatkan gudangnya.
+	existing, gerr := h.mutasi.Get(c.Request().Context(), id)
+	if gerr != nil {
+		if errors.Is(gerr, domain.ErrMutasiNotFound) {
+			return echo.NewHTTPError(http.StatusNotFound, "mutasi tidak ditemukan")
+		}
+		return gerr
+	}
+	if err := enforceGudangScopeAny(c, existing.GudangAsalID, existing.GudangTujuanID); err != nil {
+		return err
+	}
 	if err := fn(c.Request().Context(), id, user.ID); err != nil {
 		return h.renderShow(c, id, humanizeMutasiError(err))
 	}
@@ -222,6 +247,9 @@ func (h *MutasiHandler) renderShow(c echo.Context, id int64, flashErr string) er
 		if errors.Is(err, domain.ErrMutasiNotFound) {
 			return echo.NewHTTPError(http.StatusNotFound, "mutasi tidak ditemukan")
 		}
+		return err
+	}
+	if err := enforceGudangScopeAny(c, m.GudangAsalID, m.GudangTujuanID); err != nil {
 		return err
 	}
 	gAsal, _ := h.gudang.Get(ctx, m.GudangAsalID)

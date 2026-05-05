@@ -17,6 +17,7 @@ services:
       - LOG_LEVEL=debug
       - LOG_FORMAT=text
       - SESSION_SECRET=dev-only-secret-do-not-use-in-prod
+      - TZ=Asia/Jakarta
     depends_on:
       db:
         condition: service_healthy
@@ -31,6 +32,8 @@ services:
       - POSTGRES_USER=dev
       - POSTGRES_PASSWORD=dev
       - POSTGRES_DB=tokobangunan
+      - TZ=Asia/Jakarta
+      - PGTZ=Asia/Jakarta
     volumes:
       - pg-data:/var/lib/postgresql/data
     healthcheck:

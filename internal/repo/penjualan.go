@@ -49,24 +49,31 @@ func NewPenjualanRepo(pool *pgxpool.Pool) *PenjualanRepo {
 	return &PenjualanRepo{pool: pool}
 }
 
+// Pool exposes underlying pool untuk service yang butuh tx multi-table.
+func (r *PenjualanRepo) Pool() *pgxpool.Pool { return r.pool }
+
 const penjualanColumns = `id, nomor_kwitansi, tanggal, mitra_id, gudang_id, user_id,
 	subtotal, diskon, dpp, ppn_persen, ppn_amount, total,
 	status_bayar, jatuh_tempo, catatan, client_uuid,
-	created_at, updated_at`
+	created_at, updated_at,
+	canceled_at, canceled_by, cancel_reason`
 
 func scanPenjualan(row pgx.Row, p *domain.Penjualan) error {
 	var status string
 	var catatan *string
+	var cancelReason *string
 	if err := row.Scan(&p.ID, &p.NomorKwitansi, &p.Tanggal, &p.MitraID, &p.GudangID,
 		&p.UserID, &p.Subtotal, &p.Diskon, &p.DPP, &p.PPNPersen, &p.PPNAmount, &p.Total,
 		&status, &p.JatuhTempo,
-		&catatan, &p.ClientUUID, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		&catatan, &p.ClientUUID, &p.CreatedAt, &p.UpdatedAt,
+		&p.CanceledAt, &p.CanceledBy, &cancelReason); err != nil {
 		return err
 	}
 	p.StatusBayar = domain.StatusBayar(status)
 	if catatan != nil {
 		p.Catatan = *catatan
 	}
+	p.CancelReason = cancelReason
 	return nil
 }
 
@@ -374,6 +381,7 @@ func (r *PenjualanRepo) ListWithRelations(ctx context.Context, f ListPenjualanFi
 			p.subtotal, p.diskon, p.dpp, p.ppn_persen, p.ppn_amount, p.total,
 			p.status_bayar, p.jatuh_tempo, p.catatan, p.client_uuid,
 			p.created_at, p.updated_at,
+			p.canceled_at, p.canceled_by, p.cancel_reason,
 			m.nama, g.kode, g.nama
 		 FROM penjualan p
 		 LEFT JOIN mitra m  ON m.id = p.mitra_id
@@ -394,19 +402,21 @@ func (r *PenjualanRepo) ListWithRelations(ctx context.Context, f ListPenjualanFi
 	out := make([]PenjualanWithRelations, 0, f.PerPage)
 	for rows.Next() {
 		var (
-			row        PenjualanWithRelations
-			p          = &row.Penjualan
-			status     string
-			catatan    *string
-			mitraNama  *string
-			gudangKode *string
-			gudangNama *string
+			row          PenjualanWithRelations
+			p            = &row.Penjualan
+			status       string
+			catatan      *string
+			cancelReason *string
+			mitraNama    *string
+			gudangKode   *string
+			gudangNama   *string
 		)
 		if err := rows.Scan(
 			&p.ID, &p.NomorKwitansi, &p.Tanggal, &p.MitraID, &p.GudangID, &p.UserID,
 			&p.Subtotal, &p.Diskon, &p.DPP, &p.PPNPersen, &p.PPNAmount, &p.Total,
 			&status, &p.JatuhTempo, &catatan, &p.ClientUUID,
 			&p.CreatedAt, &p.UpdatedAt,
+			&p.CanceledAt, &p.CanceledBy, &cancelReason,
 			&mitraNama, &gudangKode, &gudangNama,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan penjualan: %w", err)
@@ -415,6 +425,7 @@ func (r *PenjualanRepo) ListWithRelations(ctx context.Context, f ListPenjualanFi
 		if catatan != nil {
 			p.Catatan = *catatan
 		}
+		p.CancelReason = cancelReason
 		if mitraNama != nil {
 			row.MitraNama = *mitraNama
 		}
@@ -511,4 +522,238 @@ func (r *PenjualanRepo) SearchByNomor(ctx context.Context, q string, limit int) 
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// HasPembayaran cek apakah invoice sudah pernah menerima pembayaran.
+// Tanggal opsional untuk partition pruning di tabel pembayaran.
+func (r *PenjualanRepo) HasPembayaran(ctx context.Context, penjualanID int64, tanggal time.Time) (bool, error) {
+	const sql = `SELECT EXISTS (
+		SELECT 1 FROM pembayaran
+		WHERE penjualan_id = $1 AND penjualan_tanggal = $2
+	)`
+	var exists bool
+	if err := r.pool.QueryRow(ctx, sql, penjualanID, tanggal).Scan(&exists); err != nil {
+		return false, fmt.Errorf("cek pembayaran: %w", err)
+	}
+	return exists, nil
+}
+
+// stokRollback - kembalikan qty stok untuk satu produk di satu gudang dengan
+// pola UPSERT (kalau row stok belum ada, buat dengan qty awal).
+func stokRollback(ctx context.Context, tx pgx.Tx, gudangID, produkID int64, qty float64) error {
+	const sql = `INSERT INTO stok (gudang_id, produk_id, qty, updated_at)
+		VALUES ($1, $2, $3, now())
+		ON CONFLICT (gudang_id, produk_id)
+		DO UPDATE SET qty = stok.qty + EXCLUDED.qty, updated_at = now()`
+	if _, err := tx.Exec(ctx, sql, gudangID, produkID, qty); err != nil {
+		return fmt.Errorf("rollback stok produk %d: %w", produkID, err)
+	}
+	return nil
+}
+
+// stokDeduct - kurangi qty stok dengan SELECT FOR UPDATE guard.
+func stokDeduct(ctx context.Context, tx pgx.Tx, gudangID, produkID int64, qty float64) error {
+	if qty <= 0 {
+		return nil
+	}
+	var current float64
+	err := tx.QueryRow(ctx,
+		`SELECT qty FROM stok WHERE gudang_id = $1 AND produk_id = $2 FOR UPDATE`,
+		gudangID, produkID,
+	).Scan(&current)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("stok produk %d tidak cukup (0 < %.4f)", produkID, qty)
+	} else if err != nil {
+		return fmt.Errorf("lock stok produk %d: %w", produkID, err)
+	}
+	if current < qty {
+		return fmt.Errorf("stok produk %d tidak cukup (%.4f < %.4f)", produkID, current, qty)
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE stok SET qty = qty - $3, updated_at = now()
+			WHERE gudang_id = $1 AND produk_id = $2`,
+		gudangID, produkID, qty,
+	); err != nil {
+		return fmt.Errorf("update stok produk %d: %w", produkID, err)
+	}
+	return nil
+}
+
+// UpdateInTx - replace items + recompute stok + update header dalam tx existing.
+// Caller bertanggung jawab atas Begin/Commit/Rollback.
+//
+// Flow:
+//  1. SELECT FOR UPDATE penjualan (id, tanggal) — lock baris.
+//  2. Guard kalau status sudah dibatalkan.
+//  3. Load existing items, rollback stok ke gudang lama.
+//  4. DELETE penjualan_item (komposit id+tanggal).
+//  5. INSERT items baru, deduct stok dengan FOR UPDATE.
+//  6. UPDATE header penjualan (subtotal/dpp/ppn/total/diskon/status/catatan/jatuh_tempo).
+func (r *PenjualanRepo) UpdateInTx(ctx context.Context, tx pgx.Tx, p *domain.Penjualan, items []domain.PenjualanItem) error {
+	// 1. Lock baris penjualan + cek status existing.
+	var existingStatus string
+	var existingGudangID int64
+	if err := tx.QueryRow(ctx,
+		`SELECT status_bayar, gudang_id FROM penjualan
+		 WHERE id = $1 AND tanggal = $2 FOR UPDATE`,
+		p.ID, p.Tanggal,
+	).Scan(&existingStatus, &existingGudangID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.ErrPenjualanNotFound
+		}
+		return fmt.Errorf("lock penjualan: %w", err)
+	}
+	if existingStatus == string(domain.StatusBayarDibatalkan) {
+		return domain.ErrInvoiceDibatalkan
+	}
+
+	// 2. Load existing items lalu rollback stok ke gudang lama.
+	rows, err := tx.Query(ctx,
+		`SELECT produk_id, qty_konversi FROM penjualan_item
+		 WHERE penjualan_id = $1 AND penjualan_tanggal = $2`,
+		p.ID, p.Tanggal,
+	)
+	if err != nil {
+		return fmt.Errorf("load items lama: %w", err)
+	}
+	oldUsage := make(map[int64]float64, 8)
+	for rows.Next() {
+		var pid int64
+		var qty float64
+		if err := rows.Scan(&pid, &qty); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan item lama: %w", err)
+		}
+		oldUsage[pid] += qty
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iter items lama: %w", err)
+	}
+	for pid, qty := range oldUsage {
+		if err := stokRollback(ctx, tx, existingGudangID, pid, qty); err != nil {
+			return err
+		}
+	}
+
+	// 3. DELETE items lama.
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM penjualan_item
+		 WHERE penjualan_id = $1 AND penjualan_tanggal = $2`,
+		p.ID, p.Tanggal,
+	); err != nil {
+		return fmt.Errorf("delete items lama: %w", err)
+	}
+
+	// 4. INSERT items baru + deduct stok.
+	newUsage := make(map[int64]float64, len(items))
+	for _, it := range items {
+		newUsage[it.ProdukID] += it.QtyKonversi
+	}
+	for pid, qty := range newUsage {
+		if err := stokDeduct(ctx, tx, p.GudangID, pid, qty); err != nil {
+			return err
+		}
+	}
+	const insertItem = `INSERT INTO penjualan_item
+		(penjualan_id, penjualan_tanggal, produk_id, produk_nama,
+		 qty, satuan_id, satuan_kode, qty_konversi, harga_satuan, diskon, subtotal)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		RETURNING id`
+	for i := range items {
+		it := &items[i]
+		if err := tx.QueryRow(ctx, insertItem,
+			p.ID, p.Tanggal, it.ProdukID, it.ProdukNama,
+			it.Qty, it.SatuanID, it.SatuanKode, it.QtyKonversi,
+			it.HargaSatuan, it.Diskon, it.Subtotal,
+		).Scan(&it.ID); err != nil {
+			return fmt.Errorf("insert item baru[%d]: %w", i, err)
+		}
+	}
+	p.Items = items
+
+	// 5. UPDATE header.
+	var catatan *string
+	if s := strings.TrimSpace(p.Catatan); s != "" {
+		catatan = &s
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE penjualan SET
+			subtotal = $3, diskon = $4, dpp = $5, ppn_persen = $6, ppn_amount = $7,
+			total = $8, status_bayar = $9, jatuh_tempo = $10, catatan = $11,
+			updated_at = now()
+		 WHERE id = $1 AND tanggal = $2`,
+		p.ID, p.Tanggal,
+		p.Subtotal, p.Diskon, p.DPP, p.PPNPersen, p.PPNAmount,
+		p.Total, string(p.StatusBayar), p.JatuhTempo, catatan,
+	); err != nil {
+		return fmt.Errorf("update penjualan: %w", err)
+	}
+	return nil
+}
+
+// CancelInTx - batalkan invoice + rollback stok semua items dalam tx existing.
+func (r *PenjualanRepo) CancelInTx(ctx context.Context, tx pgx.Tx, id int64, tanggal time.Time, userID int64, reason string) error {
+	// 1. Lock baris.
+	var existingStatus string
+	var existingGudangID int64
+	if err := tx.QueryRow(ctx,
+		`SELECT status_bayar, gudang_id FROM penjualan
+		 WHERE id = $1 AND tanggal = $2 FOR UPDATE`,
+		id, tanggal,
+	).Scan(&existingStatus, &existingGudangID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.ErrPenjualanNotFound
+		}
+		return fmt.Errorf("lock penjualan: %w", err)
+	}
+	if existingStatus == string(domain.StatusBayarDibatalkan) {
+		return domain.ErrInvoiceDibatalkan
+	}
+
+	// 2. Load items + rollback stok.
+	rows, err := tx.Query(ctx,
+		`SELECT produk_id, qty_konversi FROM penjualan_item
+		 WHERE penjualan_id = $1 AND penjualan_tanggal = $2`,
+		id, tanggal,
+	)
+	if err != nil {
+		return fmt.Errorf("load items: %w", err)
+	}
+	usage := make(map[int64]float64, 8)
+	for rows.Next() {
+		var pid int64
+		var qty float64
+		if err := rows.Scan(&pid, &qty); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan item: %w", err)
+		}
+		usage[pid] += qty
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iter items: %w", err)
+	}
+	for pid, qty := range usage {
+		if err := stokRollback(ctx, tx, existingGudangID, pid, qty); err != nil {
+			return err
+		}
+	}
+
+	// 3. UPDATE header.
+	var reasonPtr *string
+	if s := strings.TrimSpace(reason); s != "" {
+		reasonPtr = &s
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE penjualan SET
+			status_bayar = $3, canceled_at = now(), canceled_by = $4,
+			cancel_reason = $5, updated_at = now()
+		 WHERE id = $1 AND tanggal = $2`,
+		id, tanggal,
+		string(domain.StatusBayarDibatalkan), userID, reasonPtr,
+	); err != nil {
+		return fmt.Errorf("update penjualan cancel: %w", err)
+	}
+	return nil
 }

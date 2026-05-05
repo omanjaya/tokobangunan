@@ -15,10 +15,42 @@ import (
 type ProdukService struct {
 	produk *repo.ProdukRepo
 	satuan *repo.SatuanRepo
+	audit  *AuditLogService // optional; nil-safe
 }
 
 func NewProdukService(p *repo.ProdukRepo, s *repo.SatuanRepo) *ProdukService {
 	return &ProdukService{produk: p, satuan: s}
+}
+
+// SetAudit attach AuditLogService (best-effort).
+func (s *ProdukService) SetAudit(a *AuditLogService) { s.audit = a }
+
+func (s *ProdukService) logAudit(ctx context.Context, aksi string, id int64, before, after any) {
+	if s.audit == nil {
+		return
+	}
+	var uid *int64
+	if v := AuditUserFromContext(ctx); v > 0 {
+		v2 := v
+		uid = &v2
+	}
+	_ = s.audit.Record(ctx, RecordEntry{
+		UserID: uid, Aksi: aksi, Tabel: "produk", RecordID: id,
+		Before: before, After: after,
+	})
+}
+
+func produkAuditPayload(p *domain.Produk) map[string]any {
+	return map[string]any{
+		"id":               p.ID,
+		"sku":              p.SKU,
+		"nama":             p.Nama,
+		"satuan_kecil_id":  p.SatuanKecilID,
+		"satuan_besar_id":  p.SatuanBesarID,
+		"faktor_konversi":  p.FaktorKonversi,
+		"stok_minimum":     p.StokMinimum,
+		"is_active":        p.IsActive,
+	}
 }
 
 // List - bungkus repo + paging metadata.
@@ -59,6 +91,7 @@ func (s *ProdukService) Create(ctx context.Context, in dto.ProdukCreateInput) (*
 	if err := s.produk.Create(ctx, p); err != nil {
 		return nil, fmt.Errorf("create produk: %w", err)
 	}
+	s.logAudit(ctx, "create", p.ID, nil, produkAuditPayload(p))
 	return p, nil
 }
 
@@ -90,12 +123,21 @@ func (s *ProdukService) Update(ctx context.Context, id int64, in dto.ProdukUpdat
 		}
 		return nil, fmt.Errorf("update produk: %w", err)
 	}
+	s.logAudit(ctx, "update", updated.ID, produkAuditPayload(existing), produkAuditPayload(updated))
 	return updated, nil
 }
 
 // Delete soft-delete produk.
 func (s *ProdukService) Delete(ctx context.Context, id int64) error {
-	return s.produk.SoftDelete(ctx, id)
+	var beforeSnap any
+	if old, errOld := s.produk.GetByID(ctx, id); errOld == nil {
+		beforeSnap = produkAuditPayload(old)
+	}
+	if err := s.produk.SoftDelete(ctx, id); err != nil {
+		return err
+	}
+	s.logAudit(ctx, "delete", id, beforeSnap, nil)
+	return nil
 }
 
 // SetFotoURL update kolom foto_url. Pass nil untuk clear.

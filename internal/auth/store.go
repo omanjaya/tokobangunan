@@ -169,6 +169,28 @@ func (s *Store) DeleteSession(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+// DeleteSessionsByUser hapus semua session milik user. Dipakai sesudah
+// password change agar device lain ter-logout (mitigasi credential reuse).
+func (s *Store) DeleteSessionsByUser(ctx context.Context, userID int64) error {
+	const q = `DELETE FROM session WHERE user_id = $1`
+	_, err := s.pool.Exec(ctx, q, userID)
+	if err != nil {
+		return fmt.Errorf("delete sessions by user: %w", err)
+	}
+	return nil
+}
+
+// DeleteSessionsByUserExcept hapus semua session user kecuali sesi keep.
+// Dipakai pada flow ChangePassword untuk pertahankan sesi yang sedang aktif.
+func (s *Store) DeleteSessionsByUserExcept(ctx context.Context, userID int64, keep uuid.UUID) error {
+	const q = `DELETE FROM session WHERE user_id = $1 AND id <> $2`
+	_, err := s.pool.Exec(ctx, q, userID, keep)
+	if err != nil {
+		return fmt.Errorf("delete sessions except: %w", err)
+	}
+	return nil
+}
+
 // Authenticate verify username + password, handle locking. Mengembalikan user
 // kalau valid, atau ErrInvalidCredential / ErrUserLocked.
 func (s *Store) Authenticate(ctx context.Context, username, password string) (*User, error) {

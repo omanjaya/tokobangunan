@@ -17,12 +17,13 @@ type FileInfo struct {
 
 // IndexProps - props halaman list backup.
 type IndexProps struct {
-	Nav       layout.NavData
-	User      layout.UserData
-	Files     []FileInfo
-	CSRFToken string
-	Flash     string
-	Error     string
+	Nav           layout.NavData
+	User          layout.UserData
+	Files         []FileInfo
+	CSRFToken     string
+	Flash         string
+	Error         string
+	RestorePhrase string // string yang user wajib ketik untuk konfirmasi restore
 }
 
 // SizeHuman format ukuran file.

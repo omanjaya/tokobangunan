@@ -3,6 +3,7 @@ package penjualan
 import (
   "fmt"
   "strconv"
+  "strings"
 
   "github.com/omanjaya/tokobangunan/internal/view/components"
   "github.com/omanjaya/tokobangunan/internal/view/icon"
@@ -11,16 +12,16 @@ import (
 
 templ Form(p FormProps) {
   @layout.AppShell(layout.AppShellProps{
-    Title: "Penjualan Baru",
+    Title: formTitle(p),
     Nav: p.Nav,
     User: p.User,
     Breadcrumb: []layout.BreadcrumbItem{
       { Label: "Transaksi" },
       { Label: "Penjualan", Href: "/penjualan" },
-      { Label: "Baru" },
+      { Label: formCrumb(p) },
     },
   }) {
-    @components.PageHeader("Penjualan Baru", "Catat transaksi penjualan dan cetak kwitansi.")
+    @components.PageHeader(formTitle(p), formSubtitle(p))
     @FormCard(p)
   }
 }
@@ -29,8 +30,8 @@ templ FormCard(p FormProps) {
   <form
     id="penjualan-form"
     method="post"
-    action="/penjualan"
-    hx-post="/penjualan"
+    action={ templ.SafeURL(formAction(p)) }
+    hx-post={ formAction(p) }
     hx-target="#penjualan-form"
     hx-swap="outerHTML"
     x-data={ alpineState(p) }
@@ -583,7 +584,24 @@ func alpineState(p FormProps) string {
   if p.Input.PPNEnabled {
     ppnEnabled = "true"
   }
-  return "penjualanState({ items: [], diskon: 0, status: '" + status +
+  // Pre-fill items kalau edit mode (server sudah supply Items dgn harga rupiah).
+  itemsJS := "[]"
+  if p.EditID > 0 && len(p.Input.Items) > 0 {
+    var b strings.Builder
+    b.WriteString("[")
+    for i, it := range p.Input.Items {
+      if i > 0 {
+        b.WriteString(",")
+      }
+      fmt.Fprintf(&b,
+        "{uid:'i%d',produk_id:%d,produk_label:'',qty:%g,satuan_id:%d,harga:%d,diskon_item:%d,satuans:[],stok_label:'',stok_class:''}",
+        i, it.ProdukID, it.Qty, it.SatuanID, it.HargaSatuan, it.Diskon)
+    }
+    b.WriteString("]")
+    itemsJS = b.String()
+  }
+  return "penjualanState({ items: " + itemsJS + ", diskon: " +
+    strconv.FormatInt(p.Input.Diskon, 10) + ", status: '" + status +
     "', tanggal: '" + p.Input.Tanggal +
     "', gudangId: " + strconv.FormatInt(p.Input.GudangID, 10) +
     ", ppnEnabled: " + ppnEnabled +
@@ -595,4 +613,32 @@ func inputErr(err string) string {
     return "border-rose-300 focus-visible:ring-rose-500"
   }
   return ""
+}
+
+func formAction(p FormProps) string {
+  if p.EditID > 0 {
+    return "/penjualan/" + strconv.FormatInt(p.EditID, 10)
+  }
+  return "/penjualan"
+}
+
+func formTitle(p FormProps) string {
+  if p.EditID > 0 {
+    return "Edit Penjualan"
+  }
+  return "Penjualan Baru"
+}
+
+func formSubtitle(p FormProps) string {
+  if p.EditID > 0 {
+    return "Revisi item & total. Stok lama akan dikembalikan otomatis."
+  }
+  return "Catat transaksi penjualan dan cetak kwitansi."
+}
+
+func formCrumb(p FormProps) string {
+  if p.EditID > 0 {
+    return "Edit"
+  }
+  return "Baru"
 }

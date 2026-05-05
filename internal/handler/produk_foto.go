@@ -3,6 +3,9 @@ package handler
 import (
 	"errors"
 	"fmt"
+	"image"
+	"image/jpeg"
+	_ "image/png" // register PNG decoder
 	"io"
 	"net/http"
 	"os"
@@ -11,10 +14,18 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"golang.org/x/image/draw"
+	_ "golang.org/x/image/webp" // register WebP decoder
 
 	"github.com/omanjaya/tokobangunan/internal/domain"
 	"github.com/omanjaya/tokobangunan/internal/service"
 )
+
+// maxImageDim — sisi maksimum sebelum di-resize CatmullRom.
+const maxImageDim = 1600
+
+// jpegQuality — kualitas re-encode JPEG (0..100).
+const jpegQuality = 85
 
 // ProdukFotoHandler - HTTP handler untuk upload/delete foto produk.
 type ProdukFotoHandler struct {
@@ -91,8 +102,7 @@ func (h *ProdukFotoHandler) Upload(c echo.Context) error {
 	head := make([]byte, 12)
 	n, _ := io.ReadFull(src, head)
 	mime := detectMime(head[:n])
-	ext, ok := allowedMime[mime]
-	if !ok {
+	if _, ok := allowedMime[mime]; !ok {
 		return echo.NewHTTPError(http.StatusUnsupportedMediaType,
 			"format tidak didukung, gunakan JPG/PNG/WEBP")
 	}
@@ -100,21 +110,43 @@ func (h *ProdukFotoHandler) Upload(c echo.Context) error {
 		return fmt.Errorf("seek upload: %w", err)
 	}
 
+	// Decode penuh — menolak polyglot (mis. SVG dgn magic JPEG palsu) karena
+	// decoder akan error saat parse pixel data.
+	img, _, err := image.Decode(src)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusUnsupportedMediaType,
+			"file gambar tidak valid atau rusak")
+	}
+
+	// Resize jika dimensi melebihi batas, pakai CatmullRom (kualitas tinggi).
+	if b := img.Bounds(); b.Dx() > maxImageDim || b.Dy() > maxImageDim {
+		ratio := float64(maxImageDim) / float64(b.Dx())
+		if r2 := float64(maxImageDim) / float64(b.Dy()); r2 < ratio {
+			ratio = r2
+		}
+		newW := int(float64(b.Dx()) * ratio)
+		newH := int(float64(b.Dy()) * ratio)
+		dstImg := image.NewRGBA(image.Rect(0, 0, newW, newH))
+		draw.CatmullRom.Scale(dstImg, dstImg.Bounds(), img, b, draw.Over, nil)
+		img = dstImg
+	}
+
 	if err := os.MkdirAll(h.uploadDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir uploads: %w", err)
 	}
 
-	filename := fmt.Sprintf("%d_%s%s", id, uuid.NewString(), ext)
+	// Selalu re-encode ke JPEG untuk konsistensi & ukuran.
+	filename := fmt.Sprintf("%d_%s.jpg", id, uuid.NewString())
 	dstPath := filepath.Join(h.uploadDir, filename)
 
 	dst, err := os.Create(dstPath)
 	if err != nil {
 		return fmt.Errorf("create file: %w", err)
 	}
-	if _, err := io.Copy(dst, src); err != nil {
+	if err := jpeg.Encode(dst, img, &jpeg.Options{Quality: jpegQuality}); err != nil {
 		_ = dst.Close()
 		_ = os.Remove(dstPath)
-		return fmt.Errorf("copy upload: %w", err)
+		return fmt.Errorf("encode jpeg: %w", err)
 	}
 	if err := dst.Close(); err != nil {
 		return fmt.Errorf("close upload: %w", err)

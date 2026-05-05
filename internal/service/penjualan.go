@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/omanjaya/tokobangunan/internal/domain"
 	"github.com/omanjaya/tokobangunan/internal/dto"
@@ -23,6 +24,7 @@ type PenjualanService struct {
 	satuan     *repo.SatuanRepo
 	piutang    *repo.PiutangRepo
 	appSetting *AppSettingService // optional; nil-safe
+	audit      *AuditLogService   // optional; nil-safe (best-effort)
 }
 
 func NewPenjualanService(
@@ -42,6 +44,20 @@ func NewPenjualanService(
 // Dipisah dari constructor supaya tidak break callers existing.
 func (s *PenjualanService) SetAppSetting(as *AppSettingService) {
 	s.appSetting = as
+}
+
+// SetAudit attach AuditLogService (best-effort, non-fatal post-commit).
+func (s *PenjualanService) SetAudit(a *AuditLogService) { s.audit = a }
+
+func (s *PenjualanService) logAudit(ctx context.Context, userID int64, aksi string, id int64, before, after any) {
+	if s.audit == nil {
+		return
+	}
+	uid := userID
+	_ = s.audit.Record(ctx, RecordEntry{
+		UserID: &uid, Aksi: aksi, Tabel: "penjualan", RecordID: id,
+		Before: before, After: after,
+	})
 }
 
 // Create - validate, resolve referensi, generate nomor, hitung total, persist.
@@ -172,6 +188,15 @@ func (s *PenjualanService) Create(
 	if err := s.penjualan.Create(ctx, p); err != nil {
 		return nil, fmt.Errorf("create penjualan: %w", err)
 	}
+	s.logAudit(ctx, userID, "create", p.ID, nil, map[string]any{
+		"nomor_kwitansi": p.NomorKwitansi,
+		"tanggal":        p.Tanggal,
+		"mitra_id":       p.MitraID,
+		"gudang_id":      p.GudangID,
+		"total":          p.Total,
+		"status_bayar":   string(p.StatusBayar),
+		"items_count":    len(p.Items),
+	})
 	return p, nil
 }
 
@@ -222,9 +247,174 @@ func (s *PenjualanService) ListWithRelations(
 	return NewPageResult(items, total, f.Page, f.PerPage), nil
 }
 
-// Cancel - belum diimplementasi di Fase 2.
-func (s *PenjualanService) Cancel(ctx context.Context, id int64) error {
-	return errors.New("cancel penjualan belum diimplementasi pada Fase 2")
+// HasPembayaran wrapper repo — cek apakah invoice sudah ada pembayaran.
+func (s *PenjualanService) HasPembayaran(ctx context.Context, id int64, tanggal time.Time) (bool, error) {
+	return s.penjualan.HasPembayaran(ctx, id, tanggal)
+}
+
+// Update - revisi header + items penjualan existing.
+// Guard: invoice tidak boleh sudah ada pembayaran atau sudah dibatalkan.
+// Stok lama di-rollback, stok baru di-deduct dalam satu transaksi.
+func (s *PenjualanService) Update(ctx context.Context, id int64, in dto.PenjualanCreateInput, userID int64) error {
+	if err := dto.Validate(in); err != nil {
+		return err
+	}
+
+	// Load existing untuk dapat tanggal (partition key) + before snapshot.
+	existing, err := s.penjualan.GetByID(ctx, id, nil)
+	if err != nil {
+		return err
+	}
+	if existing.StatusBayar == domain.StatusBayarDibatalkan {
+		return domain.ErrInvoiceDibatalkan
+	}
+
+	// Guard: tidak boleh edit kalau sudah ada pembayaran.
+	hasPay, err := s.penjualan.HasPembayaran(ctx, id, existing.Tanggal)
+	if err != nil {
+		return err
+	}
+	if hasPay {
+		return domain.ErrInvoiceLocked
+	}
+
+	// Resolve referensi (mitra/gudang/items).
+	tgl, err := time.Parse("2006-01-02", in.Tanggal)
+	if err != nil {
+		return fmt.Errorf("parse tanggal: %w", err)
+	}
+	mitra, err := s.mitra.GetByID(ctx, in.MitraID)
+	if err != nil {
+		return err
+	}
+	if !mitra.IsActive {
+		return domain.ErrMitraTidakDitemukan
+	}
+	gudang, err := s.gudang.GetByID(ctx, in.GudangID)
+	if err != nil {
+		return err
+	}
+	if !gudang.IsActive {
+		return domain.ErrGudangNotFound
+	}
+
+	items, err := s.resolveItems(ctx, in.Items)
+	if err != nil {
+		return err
+	}
+
+	// Build entity (preserve immutable fields: ID, NomorKwitansi, Tanggal partition).
+	p := &domain.Penjualan{
+		ID:            existing.ID,
+		NomorKwitansi: existing.NomorKwitansi,
+		Tanggal:       existing.Tanggal, // partition key — tidak bisa diubah
+		MitraID:       mitra.ID,
+		GudangID:      gudang.ID,
+		UserID:        existing.UserID,
+		Items:         items,
+		Diskon:        in.Diskon * 100,
+		StatusBayar:   domain.StatusBayar(in.StatusBayar),
+		Catatan:       strings.TrimSpace(in.Catatan),
+		ClientUUID:    existing.ClientUUID,
+	}
+	_ = tgl // tanggal input diabaikan untuk partition safety
+	if jt := strings.TrimSpace(in.JatuhTempo); jt != "" {
+		t, err := time.Parse("2006-01-02", jt)
+		if err != nil {
+			return fmt.Errorf("parse jatuh tempo: %w", err)
+		}
+		p.JatuhTempo = &t
+	}
+	if in.PPNEnabled && s.appSetting != nil {
+		if cfg, err := s.appSetting.PajakConfig(ctx); err == nil && cfg != nil && cfg.PPNEnabled {
+			p.PPNPersen = cfg.PPNPersen
+		}
+	}
+	p.HitungTotal()
+	if err := p.Validate(); err != nil {
+		return err
+	}
+
+	// Limit kredit guard.
+	if (p.StatusBayar == domain.StatusKredit || p.StatusBayar == domain.StatusSebagian) &&
+		mitra.LimitKredit > 0 {
+		outstanding, err := s.piutang.OutstandingByMitra(ctx, mitra.ID)
+		if err != nil {
+			return fmt.Errorf("cek piutang outstanding: %w", err)
+		}
+		// Outstanding lama sudah include invoice ini (kalau status lama kredit/sebagian);
+		// untuk simplifikasi: kalau status lama lunas, anggap outstanding murni;
+		// kalau lama kredit/sebagian, kurangi total lama supaya tidak double count.
+		effective := outstanding
+		if existing.StatusBayar == domain.StatusKredit || existing.StatusBayar == domain.StatusSebagian {
+			effective -= existing.Total
+			if effective < 0 {
+				effective = 0
+			}
+		}
+		if effective+p.Total > mitra.LimitKredit {
+			return domain.ErrLimitKreditTerlampaui
+		}
+	}
+
+	err = pgx.BeginFunc(ctx, s.penjualan.Pool(), func(tx pgx.Tx) error {
+		return s.penjualan.UpdateInTx(ctx, tx, p, items)
+	})
+	if err != nil {
+		return fmt.Errorf("update penjualan: %w", err)
+	}
+
+	s.logAudit(ctx, userID, "update", p.ID,
+		map[string]any{
+			"mitra_id":     existing.MitraID,
+			"total":        existing.Total,
+			"status_bayar": string(existing.StatusBayar),
+			"items_count":  len(existing.Items),
+		},
+		map[string]any{
+			"mitra_id":     p.MitraID,
+			"total":        p.Total,
+			"status_bayar": string(p.StatusBayar),
+			"items_count":  len(p.Items),
+		})
+	return nil
+}
+
+// Cancel - batalkan invoice. Guard: belum ada pembayaran & belum dibatalkan.
+// Stok semua items di-rollback. canceled_at/by/reason diisi.
+func (s *PenjualanService) Cancel(ctx context.Context, id int64, userID int64, alasan string) error {
+	existing, err := s.penjualan.GetByID(ctx, id, nil)
+	if err != nil {
+		return err
+	}
+	if existing.StatusBayar == domain.StatusBayarDibatalkan {
+		return domain.ErrInvoiceDibatalkan
+	}
+	hasPay, err := s.penjualan.HasPembayaran(ctx, id, existing.Tanggal)
+	if err != nil {
+		return err
+	}
+	if hasPay {
+		return domain.ErrInvoiceLocked
+	}
+
+	err = pgx.BeginFunc(ctx, s.penjualan.Pool(), func(tx pgx.Tx) error {
+		return s.penjualan.CancelInTx(ctx, tx, id, existing.Tanggal, userID, alasan)
+	})
+	if err != nil {
+		return fmt.Errorf("cancel penjualan: %w", err)
+	}
+
+	s.logAudit(ctx, userID, "cancel", id,
+		map[string]any{
+			"status_bayar": string(existing.StatusBayar),
+			"total":        existing.Total,
+		},
+		map[string]any{
+			"status_bayar":  string(domain.StatusBayarDibatalkan),
+			"cancel_reason": alasan,
+		})
+	return nil
 }
 
 // StokInfoOf - posisi stok produk di gudang + stok_minimum.
