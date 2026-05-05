@@ -15,7 +15,7 @@ require (
 	github.com/xuri/excelize/v2 v2.8.1
 	golang.org/x/crypto v0.50.0
 	golang.org/x/image v0.39.0
-	golang.org/x/time v0.5.0
+	golang.org/x/time v0.15.0
 )
 
 require (
