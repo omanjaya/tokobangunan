@@ -15,9 +15,31 @@ templ AppShell(props AppShellProps) {
       <meta name="description" content={ descOrDefault(props.Description) }/>
       <link rel="manifest" href="/manifest.webmanifest"/>
       <link rel="icon" type="image/svg+xml" href="/static/icon/favicon.svg"/>
+      <link rel="apple-touch-icon" href="/static/icon/apple-touch-icon.png"/>
+      <meta name="apple-mobile-web-app-capable" content="yes"/>
+      <meta name="mobile-web-app-capable" content="yes"/>
+      <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+      <meta name="apple-mobile-web-app-title" content="Tokobangunan"/>
+      <meta name="application-name" content="Tokobangunan"/>
       <title>{ props.Title } - Tokobangunan</title>
-      <link rel="stylesheet" href="/static/css/app.css"/>
-      <style>[x-cloak]{display:none !important}</style>
+      <!-- Preload primary font (Inter) — used by LCP text -->
+      <link rel="preload" href="/static/font/InterVariable.woff2" as="font" type="font/woff2" crossorigin="anonymous"/>
+      <!-- Non-render-blocking CSS: preload + nonce'd inline swap, with noscript fallback -->
+      <link id="app-css" rel="preload" href="/static/css/app.css" as="style"/>
+      <noscript><link rel="stylesheet" href="/static/css/app.css"/></noscript>
+      <script nonce={ CSPNonce(ctx) }>
+        (function(){var l=document.getElementById('app-css');if(l){l.rel='stylesheet';}})();
+      </script>
+      <!-- Critical inline CSS to avoid FOUC for above-the-fold content -->
+      <style>
+        [x-cloak]{display:none !important}
+        html,body{margin:0;padding:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;background:#f8fafc;color:#0f172a;line-height:1.5}
+        body{min-height:100vh}
+        main{display:flex;flex-direction:column;min-height:100vh}
+        @media (min-width:768px){main{margin-left:16rem}}
+        .text-amber-800{color:#92400e}
+        a{color:inherit;text-decoration:none}
+      </style>
       <script src="/static/js/htmx.min.js" defer></script>
       <script src="/static/js/uuid.min.js" defer></script>
       <script src="/static/js/sync.min.js" defer></script>

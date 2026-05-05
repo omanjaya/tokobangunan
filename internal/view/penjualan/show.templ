@@ -114,6 +114,10 @@ templ shareActions(penjualanID int64, mitraKontakStr, mitraEmailStr string) {
         <input type="text" readonly :value="window._shareURL || 'Memuat...'" class="input"/>
         <div class="flex justify-end gap-2 pt-2">
           <button type="button" class="btn-ghost btn-md" @click="modal=''">Tutup</button>
+          <button type="button" class="btn-ghost btn-md"
+                  @click="(async()=>{const u=window._shareURL||'';if(!u)return;if(navigator.share){try{await navigator.share({title:'Kwitansi',url:u});}catch(e){}}else{try{await navigator.clipboard.writeText(u);alert('Link disalin');}catch(e){alert('Gagal menyalin');}}})()">
+            Bagikan
+          </button>
           <button type="button" class="btn-primary btn-md"
                   @click="navigator.clipboard.writeText(window._shareURL||''); alert('Link disalin');">
             Salin

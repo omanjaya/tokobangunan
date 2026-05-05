@@ -1,0 +1,929 @@
+openapi: 3.0.3
+info:
+  title: Tokobangunan ERP API
+  version: 1.0.0
+  description: |
+    Internal API untuk sistem ERP Tokobangunan.
+
+    **Auth model:**
+    - Login via `POST /login` set cookie `tb_session` (HttpOnly, Secure, SameSite=Lax).
+    - Semua endpoint protected pakai cookie tersebut.
+    - Untuk method non-GET (POST/PUT/DELETE), wajib include header `X-CSRF-Token`
+      dengan nilai yang diset cookie `tb_csrf` (double-submit pattern).
+    - Role: `owner`, `admin`, `kasir`, `gudang`, `mitra`. Setiap endpoint dapat
+      memiliki role requirement.
+
+    **Response model:**
+    - Sebagian besar endpoint render HTML (server-side rendered, htmx-friendly).
+    - Endpoint yang return JSON ditandai eksplisit (`application/json`).
+    - Endpoint export return file binary (PDF/XLSX/CSV).
+
+    **Out of scope dokumen ini:** portal mitra (`/m/...`) — separate API surface.
+
+  contact:
+    name: Tokobangunan Engineering
+  license:
+    name: Internal
+
+servers:
+  - url: http://localhost:7777
+    description: Development
+  - url: https://app.tokobangunan.com
+    description: Production
+
+security:
+  - sessionCookie: []
+
+tags:
+  - name: auth
+    description: Login/logout
+  - name: dashboard
+    description: Halaman dashboard
+  - name: penjualan
+    description: Manajemen penjualan
+  - name: pembayaran
+    description: Pembayaran piutang
+  - name: produk
+    description: Master data produk
+  - name: setting
+    description: Konfigurasi sistem
+  - name: laporan
+    description: Export laporan
+  - name: ops
+    description: Health & monitoring
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: tb_session
+    metricsBasic:
+      type: http
+      scheme: basic
+      description: Basic auth khusus untuk /metrics
+
+  parameters:
+    csrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema:
+        type: string
+      description: CSRF token (mirror cookie `tb_csrf`). Wajib pada method non-GET.
+    pathID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+      required: [error]
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          example: admin
+        password:
+          type: string
+          format: password
+        remember:
+          type: boolean
+          default: false
+
+    Penjualan:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        nomor:
+          type: string
+          example: "INV/2026/0001"
+        client_uuid:
+          type: string
+          format: uuid
+          description: Client-side idempotency key
+        tanggal:
+          type: string
+          format: date
+        mitra_id:
+          type: integer
+          nullable: true
+        gudang_id:
+          type: integer
+        kasir_id:
+          type: integer
+        subtotal:
+          type: integer
+          description: Rupiah, integer
+        diskon:
+          type: integer
+        pajak:
+          type: integer
+        total:
+          type: integer
+        status:
+          type: string
+          enum: [draft, posted, cancelled]
+        catatan:
+          type: string
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PenjualanItem'
+        created_at:
+          type: string
+          format: date-time
+      required: [id, nomor, tanggal, total, status]
+
+    PenjualanItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        produk_id:
+          type: integer
+        sku:
+          type: string
+        nama:
+          type: string
+        qty:
+          type: number
+        satuan:
+          type: string
+        harga:
+          type: integer
+        diskon_pct:
+          type: number
+        diskon_nominal:
+          type: integer
+        subtotal:
+          type: integer
+      required: [produk_id, qty, harga]
+
+    PenjualanCreateRequest:
+      type: object
+      required: [tanggal, items]
+      properties:
+        client_uuid:
+          type: string
+          format: uuid
+        tanggal:
+          type: string
+          format: date
+        mitra_id:
+          type: integer
+          nullable: true
+        gudang_id:
+          type: integer
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/PenjualanItem'
+        diskon:
+          type: integer
+          default: 0
+        catatan:
+          type: string
+
+    Pembayaran:
+      type: object
+      properties:
+        id:
+          type: integer
+        nomor:
+          type: string
+          example: "PAY/2026/0001"
+        client_uuid:
+          type: string
+          format: uuid
+        tanggal:
+          type: string
+          format: date
+        mitra_id:
+          type: integer
+        metode:
+          type: string
+          enum: [cash, transfer, edc, qris]
+        jumlah:
+          type: integer
+        catatan:
+          type: string
+          nullable: true
+        alokasi:
+          type: array
+          items:
+            type: object
+            properties:
+              penjualan_id:
+                type: integer
+              jumlah:
+                type: integer
+      required: [tanggal, mitra_id, metode, jumlah]
+
+    PembayaranBatchRequest:
+      type: object
+      required: [mitra_id, metode, jumlah, alokasi]
+      properties:
+        client_uuid:
+          type: string
+          format: uuid
+        tanggal:
+          type: string
+          format: date
+        mitra_id:
+          type: integer
+        metode:
+          type: string
+          enum: [cash, transfer, edc, qris]
+        jumlah:
+          type: integer
+        alokasi:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [penjualan_id, jumlah]
+            properties:
+              penjualan_id:
+                type: integer
+              jumlah:
+                type: integer
+
+    ProdukSearchResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              sku:
+                type: string
+              nama:
+                type: string
+              harga:
+                type: integer
+              stok:
+                type: number
+              satuan:
+                type: string
+
+    MitraSearchResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              nama:
+                type: string
+              telepon:
+                type: string
+              piutang:
+                type: integer
+
+    SMTPTestRequest:
+      type: object
+      required: [to]
+      properties:
+        to:
+          type: string
+          format: email
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+
+  responses:
+    Unauthorized:
+      description: Tidak terautentikasi (cookie session invalid/expired)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Role tidak mencukupi
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource tidak ditemukan
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationError:
+      description: Validasi gagal
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    CSRFError:
+      description: CSRF token invalid/missing
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    HTMLPage:
+      description: Halaman HTML server-rendered
+      content:
+        text/html:
+          schema:
+            type: string
+
+paths:
+  # ---------------- AUTH ----------------
+  /login:
+    get:
+      tags: [auth]
+      summary: Tampilkan halaman login
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+    post:
+      tags: [auth]
+      summary: Login user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '302':
+          description: Redirect ke /dashboard, set cookie tb_session
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: tb_session=...; HttpOnly; Secure; SameSite=Lax
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /logout:
+    post:
+      tags: [auth]
+      summary: Logout, invalidate session
+      parameters:
+        - $ref: '#/components/parameters/csrfToken'
+      responses:
+        '302':
+          description: Redirect ke /login
+
+  # ---------------- DASHBOARD ----------------
+  /dashboard:
+    get:
+      tags: [dashboard]
+      summary: Halaman dashboard utama
+      description: Render HTML dashboard dengan widget penjualan hari ini, piutang, stok rendah, dll.
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ---------------- PENJUALAN ----------------
+  /penjualan:
+    get:
+      tags: [penjualan]
+      summary: List penjualan
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: tgl_dari
+          schema: { type: string, format: date }
+        - in: query
+          name: tgl_sampai
+          schema: { type: string, format: date }
+        - in: query
+          name: mitra_id
+          schema: { type: integer }
+        - in: query
+          name: status
+          schema: { type: string, enum: [draft, posted, cancelled] }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+      responses:
+        '200':
+          description: HTML list (atau JSON kalau Accept=application/json)
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Penjualan'
+                  page:
+                    type: integer
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [penjualan]
+      summary: Buat penjualan baru
+      parameters:
+        - $ref: '#/components/parameters/csrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PenjualanCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PenjualanCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Penjualan'
+        '302':
+          description: Redirect ke detail penjualan
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /penjualan/baru:
+    get:
+      tags: [penjualan]
+      summary: Form input penjualan baru
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+
+  /penjualan/{id}:
+    get:
+      tags: [penjualan]
+      summary: Detail penjualan
+      parameters:
+        - $ref: '#/components/parameters/pathID'
+      responses:
+        '200':
+          description: HTML detail (atau JSON kalau Accept=application/json)
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Penjualan'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [penjualan]
+      summary: Update penjualan (form submit)
+      parameters:
+        - $ref: '#/components/parameters/pathID'
+        - $ref: '#/components/parameters/csrfToken'
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PenjualanCreateRequest'
+      responses:
+        '302':
+          description: Redirect ke detail
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /penjualan/{id}/edit:
+    get:
+      tags: [penjualan]
+      summary: Form edit penjualan
+      parameters:
+        - $ref: '#/components/parameters/pathID'
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /penjualan/{id}/cancel:
+    post:
+      tags: [penjualan]
+      summary: Batalkan penjualan
+      parameters:
+        - $ref: '#/components/parameters/pathID'
+        - $ref: '#/components/parameters/csrfToken'
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                alasan:
+                  type: string
+      responses:
+        '302':
+          description: Redirect ke detail
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Tidak dapat dicancel (sudah ada pembayaran terkait)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /penjualan/search-produk:
+    get:
+      tags: [penjualan]
+      summary: Search produk untuk autocomplete (JSON)
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema: { type: string, minLength: 1 }
+        - in: query
+          name: gudang_id
+          schema: { type: integer }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20, maximum: 50 }
+      responses:
+        '200':
+          description: List produk match
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProdukSearchResult'
+
+  /penjualan/search-mitra:
+    get:
+      tags: [penjualan]
+      summary: Search mitra untuk autocomplete (JSON)
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema: { type: string, minLength: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20, maximum: 50 }
+      responses:
+        '200':
+          description: List mitra match
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MitraSearchResult'
+
+  # ---------------- PEMBAYARAN ----------------
+  /pembayaran:
+    get:
+      tags: [pembayaran]
+      summary: List pembayaran
+      responses:
+        '200':
+          $ref: '#/components/responses/HTMLPage'
+    post:
+      tags: [pembayaran]
+      summary: Buat pembayaran tunggal
+      parameters:
+        - $ref: '#/components/parameters/csrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pembayaran'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Pembayaran'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pembayaran'
+        '302':
+          description: Redirect ke detail
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /pembayaran/batch:
+    post:
+      tags: [pembayaran]
+      summary: Buat pembayaran dengan multi-alokasi ke beberapa penjualan sekaligus
+      parameters:
+        - $ref: '#/components/parameters/csrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PembayaranBatchRequest'
+      responses:
+        '201':
+          description: Created, alokasi tersimpan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pembayaran'
+        '422':
+          description: Sum alokasi != jumlah, atau penjualan_id invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ---------------- PRODUK ----------------
+  /produk/{id}/foto:
+    post:
+      tags: [produk]
+      summary: Upload foto produk (multipart)
+      parameters:
+        - $ref: '#/components/parameters/pathID'
+        - $ref: '#/components/parameters/csrfToken'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [foto]
+              properties:
+                foto:
+                  type: string
+                  format: binary
+                  description: JPG/PNG/WebP, max 5MB
+                primary:
+                  type: boolean
+                  default: false
+      responses:
+        '201':
+          description: Foto tersimpan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer }
+                  url: { type: string }
+        '413':
+          description: File terlalu besar
+        '415':
+          description: Format file tidak didukung
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ---------------- SETTING ----------------
+  /setting/smtp/test:
+    post:
+      tags: [setting]
+      summary: Kirim email test untuk verifikasi konfigurasi SMTP
+      parameters:
+        - $ref: '#/components/parameters/csrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SMTPTestRequest'
+      responses:
+        '200':
+          description: Email test terkirim
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  message: { type: string }
+        '422':
+          description: SMTP config invalid atau email gagal terkirim
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ---------------- LAPORAN ----------------
+  /laporan/penjualan/export.pdf:
+    get:
+      tags: [laporan]
+      summary: Export laporan penjualan ke PDF
+      parameters:
+        - in: query
+          name: tgl_dari
+          required: true
+          schema: { type: string, format: date }
+        - in: query
+          name: tgl_sampai
+          required: true
+          schema: { type: string, format: date }
+        - in: query
+          name: mitra_id
+          schema: { type: integer }
+      responses:
+        '200':
+          description: PDF binary
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
+  /laporan/penjualan/export.xlsx:
+    get:
+      tags: [laporan]
+      summary: Export laporan penjualan ke Excel
+      parameters:
+        - in: query
+          name: tgl_dari
+          required: true
+          schema: { type: string, format: date }
+        - in: query
+          name: tgl_sampai
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: XLSX binary
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+
+  /laporan/penjualan/export.csv:
+    get:
+      tags: [laporan]
+      summary: Export laporan penjualan ke CSV
+      parameters:
+        - in: query
+          name: tgl_dari
+          required: true
+          schema: { type: string, format: date }
+        - in: query
+          name: tgl_sampai
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: CSV
+          content:
+            text/csv:
+              schema:
+                type: string
+
+  /laporan/piutang/export.pdf:
+    get:
+      tags: [laporan]
+      summary: Export laporan piutang ke PDF
+      parameters:
+        - in: query
+          name: as_of
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: PDF binary
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+
+  /laporan/piutang/export.xlsx:
+    get:
+      tags: [laporan]
+      summary: Export laporan piutang ke Excel
+      parameters:
+        - in: query
+          name: as_of
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: XLSX binary
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+
+  /laporan/stok/export.xlsx:
+    get:
+      tags: [laporan]
+      summary: Export laporan stok ke Excel
+      responses:
+        '200':
+          description: XLSX binary
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+
+  /laporan/stok/export.csv:
+    get:
+      tags: [laporan]
+      summary: Export laporan stok ke CSV
+      responses:
+        '200':
+          description: CSV
+          content:
+            text/csv:
+              schema: { type: string }
+
+  # ---------------- OPS ----------------
+  /livez:
+    get:
+      tags: [ops]
+      summary: Liveness probe
+      description: Cek proses hidup. Return 200 selama proses bisa respond.
+      security: []
+      responses:
+        '200':
+          description: Alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /readyz:
+    get:
+      tags: [ops]
+      summary: Readiness probe
+      description: |
+        Cek dependency siap (DB ping, migrasi up-to-date). Return 503 kalau
+        ada dependency tidak ready (deployer akan tahan traffic).
+      security: []
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Not ready (DB down, migrasi pending, dll)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /metrics:
+    get:
+      tags: [ops]
+      summary: Prometheus metrics endpoint
+      description: Protected dengan basic auth khusus monitoring.
+      security:
+        - metricsBasic: []
+      responses:
+        '200':
+          description: Prometheus exposition format
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
