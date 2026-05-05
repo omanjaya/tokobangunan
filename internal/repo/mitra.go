@@ -115,9 +115,12 @@ func (r *MitraRepo) Search(ctx context.Context, query string, limit int) ([]doma
 	if q == "" {
 		return []domain.Mitra{}, nil
 	}
+	// Trigram (`%`) operator pakai gin idx_mitra_nama_trgm / idx_mitra_kode_trgm.
+	// ILIKE fallback dipertahankan supaya prefix pendek (1-2 char) tetap match
+	// walau di bawah pg_trgm.similarity_threshold (default 0.3).
 	sql := fmt.Sprintf(`SELECT %s FROM mitra
 		WHERE deleted_at IS NULL AND is_active = TRUE
-		  AND (nama ILIKE $1 OR kode ILIKE $1)
+		  AND (nama %% $2 OR kode %% $2 OR nama ILIKE $1 OR kode ILIKE $1)
 		ORDER BY similarity(nama, $2) DESC, nama ASC
 		LIMIT $3`, mitraColumns)
 	rows, err := r.pool.Query(ctx, sql, "%"+q+"%", q, limit)

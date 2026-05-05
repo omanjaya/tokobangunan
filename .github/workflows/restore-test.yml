@@ -1,0 +1,75 @@
+name: Restore Drill
+
+on:
+  schedule:
+    - cron: '0 4 * * 0'  # Sunday 04:00 UTC
+  workflow_dispatch:
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dev
+          POSTGRES_PASSWORD: dev
+          POSTGRES_DB: tokobangunan
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dev"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install postgresql-client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Apply migrations
+        env:
+          PGPASSWORD: dev
+        run: |
+          if [ -d db/migrations ]; then
+            for f in $(ls db/migrations/*.up.sql 2>/dev/null | sort); do
+              echo "applying $f"
+              psql -h localhost -U dev -d tokobangunan -f "$f"
+            done
+          else
+            echo "no db/migrations dir, skipping"
+          fi
+
+      - name: Backup (pg_dump direct, no docker)
+        env:
+          PGPASSWORD: dev
+        run: |
+          mkdir -p backups
+          TS=$(date +%Y%m%d_%H%M%S)
+          pg_dump -h localhost -U dev -F custom -d tokobangunan \
+            > "backups/drill_${TS}.dump"
+          ls -lh backups/
+
+      - name: Restore drill into fresh DB
+        env:
+          PGPASSWORD: dev
+        run: |
+          DUMP=$(ls -1t backups/drill_*.dump | head -n1)
+          echo "restoring $DUMP"
+          psql -h localhost -U dev -d postgres \
+            -c "DROP DATABASE IF EXISTS tokobangunan_drill;"
+          psql -h localhost -U dev -d postgres \
+            -c "CREATE DATABASE tokobangunan_drill;"
+          pg_restore -h localhost -U dev -d tokobangunan_drill \
+            --no-owner --no-privileges "$DUMP"
+
+      - name: Smoke check restored DB
+        env:
+          PGPASSWORD: dev
+        run: |
+          psql -h localhost -U dev -d tokobangunan_drill \
+            -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';"

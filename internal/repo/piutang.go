@@ -61,17 +61,89 @@ func NewPiutangRepo(pool *pgxpool.Pool) *PiutangRepo {
 	return &PiutangRepo{pool: pool}
 }
 
-// OutstandingByMitra hitung sisa piutang per mitra (penjualan kredit/sebagian - pembayaran).
+// outstandingCTE returns a reusable CTE block that produces, for every open
+// invoice (penjualan with status_bayar IN ('kredit','sebagian')), an
+// `outstanding_real` value computed via FIFO read-time allocation of standalone
+// pembayaran (penjualan_id IS NULL) per mitra.
+//
+// Allocation algorithm:
+//   - linked     : pembayaran tied to a specific penjualan (penjualan_id NOT NULL)
+//   - deposit    : SUM(pembayaran.jumlah) WHERE penjualan_id IS NULL, per mitra
+//   - inv        : penjualan kredit/sebagian, sisa_after_linked = total - dibayar_linked
+//   - inv_alloc  : invoices ordered by (tanggal, id) per mitra; cum_before =
+//                  cumulative sisa of strictly previous invoices; the deposit
+//                  pool is consumed FIFO so each invoice gets:
+//                    alloc = GREATEST(0, LEAST(sisa, pool - cum_before))
+//                    outstanding_real = sisa - alloc
+//
+// The CTE exposes columns via the `inv_alloc` table:
+//
+//	pid, ptg, mitra_id, total, dibayar_linked,
+//	sisa_after_linked, outstanding_real, due_date, jatuh_tempo, nomor_kwitansi
+//
+// Callers chain extra CTEs / SELECTs after this block.
+const outstandingCTE = `
+WITH linked AS (
+    SELECT penjualan_id, penjualan_tanggal, SUM(jumlah) AS dibayar
+    FROM pembayaran
+    WHERE penjualan_id IS NOT NULL
+    GROUP BY penjualan_id, penjualan_tanggal
+),
+deposit AS (
+    SELECT mitra_id, COALESCE(SUM(jumlah), 0) AS pool
+    FROM pembayaran
+    WHERE penjualan_id IS NULL
+    GROUP BY mitra_id
+),
+inv AS (
+    SELECT pj.id              AS pid,
+           pj.tanggal          AS ptg,
+           pj.mitra_id         AS mitra_id,
+           pj.nomor_kwitansi   AS nomor_kwitansi,
+           pj.total            AS total,
+           pj.jatuh_tempo      AS jatuh_tempo,
+           COALESCE(pj.jatuh_tempo,
+                    pj.tanggal + (m.jatuh_tempo_hari || ' days')::interval)::date AS due_date,
+           COALESCE(l.dibayar, 0) AS dibayar_linked,
+           pj.total - COALESCE(l.dibayar, 0) AS sisa_after_linked
+    FROM penjualan pj
+    JOIN mitra m ON m.id = pj.mitra_id
+    LEFT JOIN linked l
+      ON l.penjualan_id = pj.id AND l.penjualan_tanggal = pj.tanggal
+    WHERE pj.status_bayar IN ('kredit','sebagian')
+),
+inv_cum AS (
+    SELECT i.*,
+           COALESCE(SUM(GREATEST(i.sisa_after_linked, 0)) OVER (
+               PARTITION BY i.mitra_id
+               ORDER BY i.ptg ASC, i.pid ASC
+               ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+           ), 0) AS cum_before
+    FROM inv i
+),
+inv_alloc AS (
+    SELECT ic.*,
+           GREATEST(0,
+                    ic.sisa_after_linked
+                    - GREATEST(0,
+                               LEAST(GREATEST(ic.sisa_after_linked, 0),
+                                     COALESCE(d.pool, 0) - ic.cum_before))
+           ) AS outstanding_real,
+           GREATEST(0,
+                    LEAST(GREATEST(ic.sisa_after_linked, 0),
+                          COALESCE(d.pool, 0) - ic.cum_before)
+           ) AS deposit_alloc
+    FROM inv_cum ic
+    LEFT JOIN deposit d ON d.mitra_id = ic.mitra_id
+)`
+
+// OutstandingByMitra hitung sisa piutang per mitra (FIFO-aware: standalone
+// pembayaran dengan penjualan_id NULL ikut mengurangi outstanding).
 func (r *PiutangRepo) OutstandingByMitra(ctx context.Context, mitraID int64) (int64, error) {
-	const sql = `
-		SELECT COALESCE((
-			SELECT SUM(total) FROM penjualan
-			WHERE mitra_id = $1 AND status_bayar IN ('kredit','sebagian')
-		), 0) - COALESCE((
-			SELECT SUM(p.jumlah) FROM pembayaran p
-			JOIN penjualan pj ON pj.id = p.penjualan_id AND pj.tanggal = p.penjualan_tanggal
-			WHERE p.mitra_id = $1 AND pj.status_bayar IN ('kredit','sebagian')
-		), 0)`
+	sql := outstandingCTE + `
+		SELECT COALESCE(SUM(outstanding_real), 0)
+		FROM inv_alloc
+		WHERE mitra_id = $1`
 	var v int64
 	if err := r.pool.QueryRow(ctx, sql, mitraID).Scan(&v); err != nil {
 		return 0, fmt.Errorf("outstanding mitra: %w", err)
@@ -89,33 +161,22 @@ func (r *PiutangRepo) OutstandingByMitra(ctx context.Context, mitraID int64) (in
 func (r *PiutangRepo) SummaryAll(ctx context.Context, f ListPiutangFilter) ([]domain.PiutangSummary, int, error) {
 	f.Normalize()
 
-	// CTE: per-invoice outstanding + due_date efektif.
-	const baseCTE = `
-WITH inv AS (
-    SELECT pj.id AS pid, pj.tanggal AS ptg, pj.mitra_id, pj.total,
-           COALESCE(pj.jatuh_tempo,
-                    pj.tanggal + (m.jatuh_tempo_hari || ' days')::interval)::date AS due_date,
-           COALESCE((
-               SELECT SUM(jumlah) FROM pembayaran
-               WHERE penjualan_id = pj.id AND penjualan_tanggal = pj.tanggal
-           ), 0) AS dibayar
-    FROM penjualan pj
-    JOIN mitra m ON m.id = pj.mitra_id
-    WHERE pj.status_bayar IN ('kredit','sebagian')
-),
+	// FIFO CTE produces inv_alloc with outstanding_real per invoice;
+	// agg aggregates only invoices yang masih outstanding > 0.
+	baseCTE := outstandingCTE + `,
 inv_open AS (
-    SELECT * FROM inv WHERE total - dibayar > 0
+    SELECT * FROM inv_alloc WHERE outstanding_real > 0
 ),
 agg AS (
     SELECT
         m.id   AS mitra_id,
         m.nama AS mitra_nama,
         m.kode AS mitra_kode,
-        SUM(io.total)               AS total_penjualan,
-        SUM(io.dibayar)             AS total_dibayar,
-        SUM(io.total - io.dibayar)  AS outstanding,
-        MIN(io.ptg)                 AS invoice_tertua,
-        COUNT(*)                    AS jumlah_invoice,
+        SUM(io.total)                              AS total_penjualan,
+        SUM(io.total - io.outstanding_real)        AS total_dibayar,
+        SUM(io.outstanding_real)                   AS outstanding,
+        MIN(io.ptg)                                AS invoice_tertua,
+        COUNT(*)                                   AS jumlah_invoice,
         MAX(GREATEST(0, (CURRENT_DATE - io.due_date)::int)) AS max_overdue
     FROM inv_open io
     JOIN mitra m ON m.id = io.mitra_id
@@ -192,34 +253,18 @@ agg AS (
 func (r *PiutangRepo) InvoicesByMitra(ctx context.Context, mitraID int64, f ListInvoiceFilter) ([]domain.PiutangInvoice, int, error) {
 	f.Normalize()
 
-	conds := []string{"pj.mitra_id = $1", "pj.status_bayar IN ('kredit','sebagian')"}
 	args := []any{mitraID}
-	idx := 2
-	if f.OnlyOverdue {
-		// only overdue → due_date < today AND outstanding > 0; we filter post-CTE.
-		_ = idx
-	}
 
-	cte := fmt.Sprintf(`
-WITH inv AS (
-    SELECT pj.id AS pid, pj.tanggal AS ptg, pj.nomor_kwitansi, pj.total, pj.jatuh_tempo,
-           COALESCE(pj.jatuh_tempo,
-                    pj.tanggal + (m.jatuh_tempo_hari || ' days')::interval)::date AS due_date,
-           COALESCE((
-               SELECT SUM(jumlah) FROM pembayaran
-               WHERE penjualan_id = pj.id AND penjualan_tanggal = pj.tanggal
-           ), 0) AS dibayar
-    FROM penjualan pj
-    JOIN mitra m ON m.id = pj.mitra_id
-    WHERE %s
-)`, strings.Join(conds, " AND "))
+	// FIFO allocation must be computed across all invoices for the mitra
+	// before filtering — pakai outstandingCTE penuh, lalu filter mitra di SELECT.
+	cte := outstandingCTE
 
-	postFilter := "(total - dibayar) > 0"
+	postFilter := "mitra_id = $1 AND outstanding_real > 0"
 	if f.OnlyOverdue {
 		postFilter += " AND due_date < CURRENT_DATE"
 	}
 
-	countSQL := cte + ` SELECT COUNT(*) FROM inv WHERE ` + postFilter
+	countSQL := cte + ` SELECT COUNT(*) FROM inv_alloc WHERE ` + postFilter
 	var total int
 	if err := r.pool.QueryRow(ctx, countSQL, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count invoice piutang: %w", err)
@@ -227,10 +272,11 @@ WITH inv AS (
 
 	offset := (f.Page - 1) * f.PerPage
 	listSQL := cte + fmt.Sprintf(`
-		SELECT pid, ptg, nomor_kwitansi, jatuh_tempo, total, dibayar,
-		       (total - dibayar) AS outstanding,
+		SELECT pid, ptg, nomor_kwitansi, jatuh_tempo, total,
+		       (total - outstanding_real) AS dibayar,
+		       outstanding_real           AS outstanding,
 		       GREATEST(0, (CURRENT_DATE - due_date)::int) AS hari_overdue
-		FROM inv WHERE %s
+		FROM inv_alloc WHERE %s
 		ORDER BY ptg ASC, pid ASC
 		LIMIT $%d OFFSET $%d`, postFilter, len(args)+1, len(args)+2)
 	args = append(args, f.PerPage, offset)
@@ -257,27 +303,16 @@ WITH inv AS (
 
 // AgingBuckets agregat total outstanding per bucket aging (untuk dashboard summary).
 func (r *PiutangRepo) AgingBuckets(ctx context.Context) (map[domain.PiutangAging]int64, error) {
-	const sql = `
-WITH inv AS (
-    SELECT pj.id, pj.tanggal, pj.total,
-           COALESCE(pj.jatuh_tempo,
-                    pj.tanggal + (m.jatuh_tempo_hari || ' days')::interval)::date AS due_date,
-           COALESCE((
-               SELECT SUM(jumlah) FROM pembayaran
-               WHERE penjualan_id = pj.id AND penjualan_tanggal = pj.tanggal
-           ), 0) AS dibayar
-    FROM penjualan pj
-    JOIN mitra m ON m.id = pj.mitra_id
-    WHERE pj.status_bayar IN ('kredit','sebagian') AND m.deleted_at IS NULL
-)
+	sql := outstandingCTE + `
 SELECT
-    SUM(CASE WHEN (CURRENT_DATE - due_date) <= 0  THEN total - dibayar ELSE 0 END) AS cur,
-    SUM(CASE WHEN (CURRENT_DATE - due_date) BETWEEN 1  AND 30 THEN total - dibayar ELSE 0 END) AS b1,
-    SUM(CASE WHEN (CURRENT_DATE - due_date) BETWEEN 31 AND 60 THEN total - dibayar ELSE 0 END) AS b2,
-    SUM(CASE WHEN (CURRENT_DATE - due_date) BETWEEN 61 AND 90 THEN total - dibayar ELSE 0 END) AS b3,
-    SUM(CASE WHEN (CURRENT_DATE - due_date) > 90 THEN total - dibayar ELSE 0 END) AS b4
-FROM inv
-WHERE (total - dibayar) > 0`
+    SUM(CASE WHEN (CURRENT_DATE - ia.due_date) <= 0  THEN ia.outstanding_real ELSE 0 END) AS cur,
+    SUM(CASE WHEN (CURRENT_DATE - ia.due_date) BETWEEN 1  AND 30 THEN ia.outstanding_real ELSE 0 END) AS b1,
+    SUM(CASE WHEN (CURRENT_DATE - ia.due_date) BETWEEN 31 AND 60 THEN ia.outstanding_real ELSE 0 END) AS b2,
+    SUM(CASE WHEN (CURRENT_DATE - ia.due_date) BETWEEN 61 AND 90 THEN ia.outstanding_real ELSE 0 END) AS b3,
+    SUM(CASE WHEN (CURRENT_DATE - ia.due_date) > 90 THEN ia.outstanding_real ELSE 0 END) AS b4
+FROM inv_alloc ia
+JOIN mitra m ON m.id = ia.mitra_id
+WHERE ia.outstanding_real > 0 AND m.deleted_at IS NULL`
 
 	var cur, b1, b2, b3, b4 *int64
 	if err := r.pool.QueryRow(ctx, sql).Scan(&cur, &b1, &b2, &b3, &b4); err != nil {

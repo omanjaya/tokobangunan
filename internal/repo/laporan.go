@@ -114,18 +114,57 @@ func (r *LaporanRepo) GetDashboardKPI(ctx context.Context, gudangID *int64) (*Da
 		return nil, fmt.Errorf("kpi omset: %w", err)
 	}
 
-	// Piutang outstanding.
+	// Piutang outstanding (FIFO-aware: standalone pembayaran dengan
+	// penjualan_id NULL ikut mengurangi outstanding read-time).
+	//
+	// Filter gudang harus dipasang di kondisi inv (sebelum window function)
+	// supaya FIFO allocation per mitra hanya beralokasi pada invoice gudang
+	// terkait — kalau filter di luar, allocation ter-overcount.
 	cond2, args2 := gudangCondition(gudangID, 1)
+	gudangFilter := strings.TrimSpace(strings.ReplaceAll(cond2, "gudang_id", "pj.gudang_id"))
+	if gudangFilter != "" {
+		// "AND pj.gudang_id = $N" → strip leading AND for embedding.
+		gudangFilter = " " + gudangFilter
+	}
 	q2 := fmt.Sprintf(`
-		SELECT COALESCE(SUM(p.total - COALESCE(b.dibayar, 0)), 0)
-		FROM penjualan p
-		LEFT JOIN (
-		  SELECT penjualan_id, penjualan_tanggal, SUM(jumlah) AS dibayar
-		  FROM pembayaran
-		  WHERE penjualan_id IS NOT NULL
-		  GROUP BY penjualan_id, penjualan_tanggal
-		) b ON b.penjualan_id = p.id AND b.penjualan_tanggal = p.tanggal
-		WHERE p.status_bayar IN ('kredit','sebagian') %s`, strings.ReplaceAll(cond2, "gudang_id", "p.gudang_id"))
+WITH linked AS (
+    SELECT penjualan_id, penjualan_tanggal, SUM(jumlah) AS dibayar
+    FROM pembayaran
+    WHERE penjualan_id IS NOT NULL
+    GROUP BY penjualan_id, penjualan_tanggal
+),
+deposit AS (
+    SELECT mitra_id, COALESCE(SUM(jumlah), 0) AS pool
+    FROM pembayaran
+    WHERE penjualan_id IS NULL
+    GROUP BY mitra_id
+),
+inv AS (
+    SELECT pj.id AS pid, pj.tanggal AS ptg, pj.mitra_id, pj.total,
+           pj.total - COALESCE(l.dibayar, 0) AS sisa_after_linked
+    FROM penjualan pj
+    LEFT JOIN linked l
+      ON l.penjualan_id = pj.id AND l.penjualan_tanggal = pj.tanggal
+    WHERE pj.status_bayar IN ('kredit','sebagian')%s
+),
+inv_cum AS (
+    SELECT i.*,
+           COALESCE(SUM(GREATEST(i.sisa_after_linked, 0)) OVER (
+               PARTITION BY i.mitra_id
+               ORDER BY i.ptg ASC, i.pid ASC
+               ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+           ), 0) AS cum_before
+    FROM inv i
+)
+SELECT COALESCE(SUM(GREATEST(0,
+           ic.sisa_after_linked
+           - GREATEST(0,
+                      LEAST(GREATEST(ic.sisa_after_linked, 0),
+                            COALESCE(d.pool, 0) - ic.cum_before))
+       )), 0)
+FROM inv_cum ic
+LEFT JOIN deposit d ON d.mitra_id = ic.mitra_id`, gudangFilter)
+	_ = cond2
 	if err := r.pool.QueryRow(ctx, q2, args2...).Scan(&out.PiutangOutstanding); err != nil {
 		return nil, fmt.Errorf("kpi piutang: %w", err)
 	}
