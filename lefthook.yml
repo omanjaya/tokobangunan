@@ -1,0 +1,19 @@
+pre-commit:
+  parallel: true
+  commands:
+    fmt:
+      glob: "*.go"
+      run: gofmt -w {staged_files} && git add {staged_files}
+    templ:
+      glob: "*.templ"
+      run: templ fmt {staged_files} && git add {staged_files}
+    vet:
+      glob: "*.go"
+      run: go vet ./...
+
+pre-push:
+  commands:
+    test:
+      run: go test -short ./...
+    lint:
+      run: golangci-lint run --timeout=5m

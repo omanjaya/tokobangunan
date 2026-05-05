@@ -1,0 +1,32 @@
+package errors
+
+import (
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// Forbidden - halaman 403.
+templ Forbidden(message string) {
+  @layout.AuthLayout(layout.AuthLayoutProps{ Title: "Akses Ditolak" }) {
+    <div class="text-center">
+      <div class="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-rose-50 text-rose-500 mb-6">
+        @icon.Lock(40, "")
+      </div>
+      <p class="text-7xl font-bold text-slate-900 tracking-tight">403</p>
+      <h1 class="mt-2 text-lg font-semibold text-slate-900">Akses Ditolak</h1>
+      <p class="mt-2 text-sm text-slate-500 max-w-sm mx-auto">
+        if message != "" && message != "Forbidden" {
+          { message }
+        } else {
+          Anda tidak memiliki izin untuk mengakses halaman ini. Hubungi admin jika Anda merasa ini keliru.
+        }
+      </p>
+      <div class="mt-6 flex items-center justify-center gap-2">
+        <a href="/dashboard" class="btn-primary btn-md inline-flex items-center gap-2">
+          @icon.Home(16, "")
+          <span>Kembali ke Dashboard</span>
+        </a>
+      </div>
+    </div>
+  }
+}

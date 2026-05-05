@@ -1,0 +1,189 @@
+package pembelian
+
+import (
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Form(p FormProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Pembelian Baru",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Transaksi" },
+      { Label: "Pembelian", Href: "/pembelian" },
+      { Label: "Baru" },
+    },
+  }) {
+    @components.PageHeader("Pembelian Baru", "Catat pembelian dari supplier ke gudang.") {}
+
+    if p.General != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "danger", Message: p.General })
+      </div>
+    }
+
+    <form method="post" action="/pembelian" class="space-y-4">
+      @components.Card(components.CardProps{ Title: "Header" }) {
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          @components.FormField(components.FormFieldProps{ ID: "tanggal", Label: "Tanggal", Required: true, Error: errOf(p, "tanggal") }) {
+            @components.Input(components.InputProps{ ID: "tanggal", Name: "tanggal", Type: "date", Value: p.Input.Tanggal, Required: true })
+          }
+          @components.FormField(components.FormFieldProps{ ID: "supplier_id", Label: "Supplier", Required: true, Error: errOf(p, "supplierid") }) {
+            <select id="supplier_id" name="supplier_id" class="input" required>
+              <option value="">— pilih supplier —</option>
+              for _, s := range p.Suppliers {
+                if s.ID == p.Input.SupplierID {
+                  <option value={ strconv.FormatInt(s.ID, 10) } selected>{ s.Nama }</option>
+                } else {
+                  <option value={ strconv.FormatInt(s.ID, 10) }>{ s.Nama }</option>
+                }
+              }
+            </select>
+          }
+          @components.FormField(components.FormFieldProps{ ID: "gudang_id", Label: "Gudang Tujuan", Required: true, Error: errOf(p, "gudangid") }) {
+            <select id="gudang_id" name="gudang_id" class="input" required>
+              <option value="">— pilih gudang —</option>
+              for _, g := range p.Gudangs {
+                if g.ID == p.Input.GudangID {
+                  <option value={ strconv.FormatInt(g.ID, 10) } selected>{ g.Kode } — { g.Nama }</option>
+                } else {
+                  <option value={ strconv.FormatInt(g.ID, 10) }>{ g.Kode } — { g.Nama }</option>
+                }
+              }
+            </select>
+          }
+        </div>
+      }
+
+      @components.Card(components.CardProps{ Title: "Item Pembelian" }) {
+        <table class="min-w-full text-sm" id="items-table">
+          <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+            <tr>
+              <th class="px-3 py-2 text-left">Produk ID</th>
+              <th class="px-3 py-2 text-right">Qty</th>
+              <th class="px-3 py-2 text-left">Satuan</th>
+              <th class="px-3 py-2 text-right">Harga (Rp)</th>
+              <th class="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            for i := 0; i < itemRowCount(p); i++ {
+              @itemRow(p, i)
+            }
+          </tbody>
+        </table>
+        <div class="mt-3">
+          <button type="button" onclick="addItemRow()" class="btn-secondary btn-sm">
+            @icon.Plus(14, "")
+            <span>Tambah Item</span>
+          </button>
+        </div>
+        <p class="text-xs text-slate-500 mt-2">
+          Catatan: Fase 5 menggunakan input Produk ID manual. Picker autocomplete tersedia di iterasi berikut.
+        </p>
+      }
+
+      @components.Card(components.CardProps{ Title: "Pembayaran" }) {
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          @components.FormField(components.FormFieldProps{ ID: "diskon", Label: "Diskon (Rp)" }) {
+            @components.Input(components.InputProps{ ID: "diskon", Name: "diskon", Type: "number", Value: int64ToStr(p.Input.Diskon) })
+          }
+          @components.FormField(components.FormFieldProps{ ID: "status_bayar", Label: "Status Bayar", Required: true, Error: errOf(p, "statusbayar") }) {
+            <select id="status_bayar" name="status_bayar" class="input" required>
+              @optStatus("lunas", "Lunas", p.Input.StatusBayar)
+              @optStatus("kredit", "Kredit", p.Input.StatusBayar)
+              @optStatus("sebagian", "Sebagian", p.Input.StatusBayar)
+            </select>
+          }
+          @components.FormField(components.FormFieldProps{ ID: "jatuh_tempo", Label: "Jatuh Tempo" }) {
+            @components.Input(components.InputProps{ ID: "jatuh_tempo", Name: "jatuh_tempo", Type: "date", Value: p.Input.JatuhTempo })
+          }
+        </div>
+        <div class="mt-4">
+          @components.FormField(components.FormFieldProps{ ID: "catatan", Label: "Catatan" }) {
+            <textarea id="catatan" name="catatan" rows="2" class="input">{ p.Input.Catatan }</textarea>
+          }
+        </div>
+      }
+
+      <div class="flex justify-end gap-2">
+        @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: "/pembelian" }) {
+          <span>Batal</span>
+        }
+        @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+          @icon.Check(16, "")
+          <span>Simpan</span>
+        }
+      </div>
+    </form>
+
+    <script>
+      function addItemRow() {
+        var tbody = document.querySelector('#items-table tbody');
+        var idx = tbody.children.length;
+        var row = document.createElement('tr');
+        row.innerHTML =
+          '<td class="px-3 py-2"><input name="produk_id[]" type="number" min="1" class="input" required></td>' +
+          '<td class="px-3 py-2 text-right"><input name="qty[]" type="number" step="0.0001" min="0" class="input" required></td>' +
+          '<td class="px-3 py-2"><select name="satuan_id[]" class="input" required>' +
+            __satuanOptions() + '</select></td>' +
+          '<td class="px-3 py-2 text-right"><input name="harga_satuan[]" type="number" min="0" class="input" required></td>' +
+          '<td class="px-3 py-2 text-right"><button type="button" onclick="this.closest(\'tr\').remove()" class="text-rose-600 text-xs">Hapus</button></td>';
+        tbody.appendChild(row);
+      }
+      function __satuanOptions() {
+        var opts = window.__satuanOptionsHTML;
+        return opts || '';
+      }
+    </script>
+    @satuanOptionsScript(p)
+  }
+}
+
+templ optStatus(value, label, current string) {
+  if value == current {
+    <option value={ value } selected>{ label }</option>
+  } else {
+    <option value={ value }>{ label }</option>
+  }
+}
+
+templ itemRow(p FormProps, idx int) {
+  <tr>
+    <td class="px-3 py-2">
+      <input name="produk_id[]" type="number" min="1" class="input"
+        value={ itemProdukIDStr(p, idx) } required/>
+    </td>
+    <td class="px-3 py-2 text-right">
+      <input name="qty[]" type="number" step="0.0001" min="0" class="input"
+        value={ itemQtyStr(p, idx) } required/>
+    </td>
+    <td class="px-3 py-2">
+      <select name="satuan_id[]" class="input" required>
+        for _, s := range p.Satuans {
+          if s.ID == itemSatuanID(p, idx) {
+            <option value={ strconv.FormatInt(s.ID, 10) } selected>{ s.Kode }</option>
+          } else {
+            <option value={ strconv.FormatInt(s.ID, 10) }>{ s.Kode }</option>
+          }
+        }
+      </select>
+    </td>
+    <td class="px-3 py-2 text-right">
+      <input name="harga_satuan[]" type="number" min="0" class="input"
+        value={ itemHargaStr(p, idx) } required/>
+    </td>
+    <td class="px-3 py-2 text-right">
+      <button type="button" onclick="this.closest('tr').remove()" class="text-rose-600 text-xs">Hapus</button>
+    </td>
+  </tr>
+}
+
+templ satuanOptionsScript(p FormProps) {
+  @templ.Raw(satuanOptionsScriptHTML(p))
+}

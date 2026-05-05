@@ -1,0 +1,120 @@
+package pajak
+
+import (
+  "fmt"
+
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+type Props struct {
+  Nav    layout.NavData
+  User   layout.UserData
+  Config domain.PajakConfig
+  Error  string
+  OK     bool
+}
+
+templ Form(p Props) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Pengaturan Pajak",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Pengaturan", Href: "/setting" },
+      { Label: "Pajak" },
+    },
+  }) {
+    @components.PageHeader("Pengaturan Pajak", "Konfigurasi PPN dan identitas PKP untuk faktur pajak.") {}
+
+    if p.OK {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "success", Message: "Konfigurasi pajak tersimpan." })
+      </div>
+    }
+    if p.Error != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "danger", Title: "Gagal menyimpan", Message: p.Error })
+      </div>
+    }
+
+    @components.Card(components.CardProps{}) {
+      <form method="post" action="/setting/pajak" class="space-y-5 max-w-2xl">
+
+        <fieldset class="space-y-3">
+          <legend class="text-sm font-semibold text-slate-800">PPN</legend>
+
+          <label class="inline-flex items-center gap-2 text-sm">
+            if p.Config.PPNEnabled {
+              <input type="checkbox" name="ppn_enabled" value="on" checked
+                     class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+            } else {
+              <input type="checkbox" name="ppn_enabled" value="on"
+                     class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+            }
+            <span>Aktifkan PPN sebagai default di transaksi</span>
+          </label>
+
+          @components.FormField(components.FormFieldProps{
+            ID: "ppn_persen", Label: "Persentase PPN (%)",
+            Helper: "Standar Indonesia 2024+: 11.0",
+          }) {
+            @components.Input(components.InputProps{
+              ID: "ppn_persen", Name: "ppn_persen", Type: "number",
+              Value: fmt.Sprintf("%g", p.Config.PPNPersen),
+              Placeholder: "11.0",
+              Suffix: "%",
+              Attrs: templ.Attributes{ "step": "0.1", "min": "0", "max": "100" },
+            })
+          }
+        </fieldset>
+
+        <fieldset class="space-y-3 pt-3 border-t border-slate-100">
+          <legend class="text-sm font-semibold text-slate-800">Pengusaha Kena Pajak (PKP)</legend>
+
+          <label class="inline-flex items-center gap-2 text-sm">
+            if p.Config.PKP {
+              <input type="checkbox" name="pkp" value="on" checked
+                     class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+            } else {
+              <input type="checkbox" name="pkp" value="on"
+                     class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+            }
+            <span>Toko terdaftar sebagai PKP (cetak Faktur Pajak)</span>
+          </label>
+
+          @components.FormField(components.FormFieldProps{ ID: "nama_pkp", Label: "Nama PKP" }) {
+            @components.Input(components.InputProps{
+              ID: "nama_pkp", Name: "nama_pkp", Value: p.Config.NamaPKP,
+              Placeholder: "Nama badan usaha",
+            })
+          }
+
+          @components.FormField(components.FormFieldProps{ ID: "alamat_pkp", Label: "Alamat PKP" }) {
+            <textarea id="alamat_pkp" name="alamat_pkp" rows="2" class="input"
+                      placeholder="Alamat sesuai dokumen pajak…">{ p.Config.AlamatPKP }</textarea>
+          }
+
+          @components.FormField(components.FormFieldProps{ ID: "npwp_pkp", Label: "NPWP" }) {
+            @components.Input(components.InputProps{
+              ID: "npwp_pkp", Name: "npwp_pkp", Value: p.Config.NPWPPKP,
+              Placeholder: "00.000.000.0-000.000",
+            })
+          }
+        </fieldset>
+
+        <div class="flex items-center gap-2 pt-2 border-t border-slate-100">
+          @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+            @icon.Check(16, "")
+            <span>Simpan</span>
+          }
+          @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: "/setting" }) {
+            <span>Kembali</span>
+          }
+        </div>
+      </form>
+    }
+  }
+}

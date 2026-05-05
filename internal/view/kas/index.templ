@@ -1,0 +1,202 @@
+package kas
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Index(p IndexProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Kas",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Kas" },
+    },
+  }) {
+    @components.PageHeader("Kas Masuk & Keluar", "Catat aliran kas non-penjualan/pembelian.") {
+      @components.Button(components.ButtonProps{
+        Variant: "secondary", Size: "md", Href: "/kas/baru?tipe=masuk",
+      }) {
+        @icon.Plus(14, "")
+        <span>Kas Masuk</span>
+      }
+      @components.Button(components.ButtonProps{
+        Variant: "primary", Size: "md", Href: "/kas/baru?tipe=keluar",
+      }) {
+        @icon.Plus(14, "")
+        <span>Kas Keluar</span>
+      }
+    }
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+      @summaryCard("Kas Masuk", p.Summary.TotalMasuk, "trending-up", "text-emerald-700", "bg-emerald-50")
+      @summaryCard("Kas Keluar", p.Summary.TotalKeluar, "trending-down", "text-rose-700", "bg-rose-50")
+      @summaryCard("Net Cashflow", p.Summary.NetCashflow, "wallet", netClass(p.Summary.NetCashflow), netBg(p.Summary.NetCashflow))
+    </div>
+
+    @filterBar(p)
+
+    @components.Card(components.CardProps{ NoPad: true }) {
+      if len(p.Items) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "wallet",
+          Title: "Belum ada transaksi kas",
+          Description: "Belum ada catatan kas masuk/keluar pada periode ini.",
+        })
+      } else {
+        @table(p)
+        @pagination(p)
+      }
+    }
+  }
+}
+
+templ summaryCard(title string, amount int64, iconName, textClass, bgClass string) {
+  <div class={ "card p-4 flex items-start gap-3", bgClass }>
+    <span class={ "shrink-0 w-10 h-10 rounded-lg bg-white flex items-center justify-center", textClass }>
+      @icon.Render(iconName, 22, "")
+    </span>
+    <div class="min-w-0">
+      <div class="text-xs uppercase tracking-wide text-slate-500">{ title }</div>
+      <div class={ "kpi-value mt-0.5", textClass }>{ format.Rupiah(amount) }</div>
+    </div>
+  </div>
+}
+
+templ filterBar(p IndexProps) {
+  <form method="get" action="/kas" class="flex flex-wrap items-end gap-3 mb-4">
+    <div>
+      <div class="text-xs font-medium text-slate-700 mb-1">Periode</div>
+      @components.DateRange(components.DateRangeProps{
+        From: p.From, To: p.To,
+        NameFrom: "from", NameTo: "to",
+      })
+    </div>
+    <div class="w-44">
+      @components.FormField(components.FormFieldProps{ ID: "tipe", Label: "Tipe" }) {
+        <select id="tipe" name="tipe" class="input">
+          <option value="">Semua</option>
+          if p.Tipe == "masuk" {
+            <option value="masuk" selected>Masuk</option>
+          } else {
+            <option value="masuk">Masuk</option>
+          }
+          if p.Tipe == "keluar" {
+            <option value="keluar" selected>Keluar</option>
+          } else {
+            <option value="keluar">Keluar</option>
+          }
+        </select>
+      }
+    </div>
+    <div class="w-56">
+      @components.FormField(components.FormFieldProps{ ID: "gudang_id", Label: "Gudang" }) {
+        <select id="gudang_id" name="gudang_id" class="input">
+          <option value="0">Semua gudang</option>
+          for _, g := range p.Gudangs {
+            if g.ID == p.GudangID {
+              <option value={ strconv.FormatInt(g.ID, 10) } selected>{ g.Kode } — { g.Nama }</option>
+            } else {
+              <option value={ strconv.FormatInt(g.ID, 10) }>{ g.Kode } — { g.Nama }</option>
+            }
+          }
+        </select>
+      }
+    </div>
+    <button type="submit" class="btn-secondary btn-md">
+      @icon.Filter(14, "")
+      <span>Terapkan</span>
+    </button>
+  </form>
+}
+
+templ table(p IndexProps) {
+  <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left">Tanggal</th>
+          <th class="px-4 py-3 text-left">Nomor</th>
+          <th class="px-4 py-3 text-left">Tipe</th>
+          <th class="px-4 py-3 text-left">Kategori</th>
+          <th class="px-4 py-3 text-left">Deskripsi</th>
+          <th class="px-4 py-3 text-right">Jumlah</th>
+          <th class="px-4 py-3 text-right">Aksi</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 bg-white">
+        for _, c := range p.Items {
+          <tr>
+            <td class="px-4 py-3">{ c.Tanggal.Format("02 Jan 2006") }</td>
+            <td class="px-4 py-3 font-mono text-xs">{ c.Nomor }</td>
+            <td class="px-4 py-3">
+              if c.Tipe == "masuk" {
+                @components.Badge("Masuk", "success")
+              } else {
+                @components.Badge("Keluar", "danger")
+              }
+            </td>
+            <td class="px-4 py-3">{ c.Kategori }</td>
+            <td class="px-4 py-3 text-slate-600 truncate max-w-xs" title={ c.Deskripsi }>{ c.Deskripsi }</td>
+            <td class="px-4 py-3 text-right tabular-nums whitespace-nowrap num">{ format.Rupiah(c.Jumlah) }</td>
+            <td class="px-4 py-3 text-right">
+              <a href={ templ.SafeURL(fmt.Sprintf("/kas/%d", c.ID)) }
+                 class="text-brand-600 hover:underline text-sm">Detail</a>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+templ pagination(p IndexProps) {
+  <div class="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm text-slate-600">
+    <div>{ fmt.Sprintf("Total %d transaksi · halaman %d dari %d", p.Total, p.Page, p.TotalPages) }</div>
+    <div class="flex items-center gap-2">
+      if p.Page > 1 {
+        @components.Button(components.ButtonProps{ Variant: "secondary", Size: "sm",
+          Href: pageURL(p, p.Page-1) }) {
+          @icon.ChevronLeft(14, "")
+          <span>Sebelumnya</span>
+        }
+      }
+      if p.Page < p.TotalPages {
+        @components.Button(components.ButtonProps{ Variant: "secondary", Size: "sm",
+          Href: pageURL(p, p.Page+1) }) {
+          <span>Berikutnya</span>
+          @icon.ChevronRight(14, "")
+        }
+      }
+    </div>
+  </div>
+}
+
+func netClass(v int64) string {
+  if v < 0 {
+    return "text-rose-700"
+  }
+  return "text-emerald-700"
+}
+
+func netBg(v int64) string {
+  if v < 0 {
+    return "bg-rose-50"
+  }
+  return "bg-emerald-50"
+}
+
+func pageURL(p IndexProps, page int) string {
+  u := "/kas?page=" + strconv.Itoa(page)
+  if p.From != "" { u += "&from=" + p.From }
+  if p.To != "" { u += "&to=" + p.To }
+  if p.GudangID > 0 { u += "&gudang_id=" + strconv.FormatInt(p.GudangID, 10) }
+  if p.Tipe != "" { u += "&tipe=" + p.Tipe }
+  return u
+}

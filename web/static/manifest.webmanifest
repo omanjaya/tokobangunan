@@ -1,0 +1,13 @@
+{
+  "name": "Tokobangunan",
+  "short_name": "Tokobangunan",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fafafa",
+  "theme_color": "#4f46e5",
+  "lang": "id",
+  "icons": [
+    { "src": "/static/icon/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

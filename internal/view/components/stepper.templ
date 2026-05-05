@@ -1,0 +1,51 @@
+package components
+
+import "strconv"
+
+// Step - 1 langkah di stepper.
+type Step struct {
+  Label  string
+  Active bool
+  Done   bool
+}
+
+templ Stepper(steps []Step) {
+  <ol class="flex items-center gap-2 flex-wrap">
+    for i, s := range steps {
+      <li class="flex items-center gap-2">
+        <span class={ stepCircleClass(s) }>
+          if s.Done {
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          } else {
+            { strconv.Itoa(i + 1) }
+          }
+        </span>
+        <span class={ stepLabelClass(s) }>{ s.Label }</span>
+        if i < len(steps) - 1 {
+          <span class="text-slate-300">—</span>
+        }
+      </li>
+    }
+  </ol>
+}
+
+func stepCircleClass(s Step) string {
+  base := "inline-flex items-center justify-center h-7 w-7 rounded-full text-xs font-semibold border"
+  switch {
+  case s.Done:
+    return base + " bg-emerald-500 border-emerald-500 text-white"
+  case s.Active:
+    return base + " bg-brand-600 border-brand-600 text-white"
+  }
+  return base + " bg-white border-slate-300 text-slate-500"
+}
+
+func stepLabelClass(s Step) string {
+  switch {
+  case s.Active:
+    return "text-sm font-medium text-brand-700"
+  case s.Done:
+    return "text-sm text-emerald-700"
+  }
+  return "text-sm text-slate-500"
+}

@@ -1,0 +1,30 @@
+package components
+
+// TooltipProps - wrapper Alpine yang menampilkan tooltip pada hover/focus.
+// Position: "top" (default) | "bottom" | "left" | "right".
+type TooltipProps struct {
+  Text     string
+  Position string
+}
+
+templ Tooltip(p TooltipProps) {
+  <span
+    x-data="{ open: false }"
+    @mouseenter="open = true"
+    @mouseleave="open = false"
+    @focusin="open = true"
+    @focusout="open = false"
+    class="relative inline-flex"
+  >
+    { children... }
+    <span
+      x-show="open"
+      x-cloak
+      x-transition.opacity
+      role="tooltip"
+      class={ tooltipPosClass(p.Position) }
+    >
+      { p.Text }
+    </span>
+  </span>
+}

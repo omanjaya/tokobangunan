@@ -1,0 +1,188 @@
+package produk
+
+import (
+  "fmt"
+  "strconv"
+  "time"
+
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/dto"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// HargaProps - props halaman harga per produk.
+type HargaProps struct {
+  Nav     layout.NavData
+  User    layout.UserData
+  Produk  domain.Produk
+  History []domain.HargaProduk
+  Input   dto.HargaSetInput
+  Errors  dto.FieldErrors
+  General string
+  Success string
+}
+
+templ Harga(p HargaProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Harga " + p.Produk.Nama,
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Master Data" },
+      { Label: "Produk", Href: "/produk" },
+      { Label: p.Produk.Nama },
+      { Label: "Harga" },
+    },
+  }) {
+    @components.PageHeader(
+      "Harga "+p.Produk.Nama,
+      "SKU "+p.Produk.SKU+". History harga jual per gudang dan tipe.",
+    ) {
+      @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: "/produk" }) {
+        @icon.ChevronLeft(14, "")
+        <span>Kembali</span>
+      }
+    }
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-1">
+        @components.Card(components.CardProps{ Title: "Set Harga Baru" }) {
+          if p.Success != "" {
+            <div class="mb-3">
+              @components.Alert(components.AlertProps{ Variant: "success", Message: p.Success })
+            </div>
+          }
+          if p.General != "" {
+            <div class="mb-3">
+              @components.Alert(components.AlertProps{ Variant: "danger", Message: p.General })
+            </div>
+          }
+          <form method="post" action={ templ.SafeURL(fmt.Sprintf("/produk/%d/harga", p.Produk.ID)) } class="space-y-3">
+            @components.FormField(components.FormFieldProps{
+              ID: "tipe", Label: "Tipe", Required: true,
+              Error: p.Errors["tipe"],
+            }) {
+              <select id="tipe" name="tipe" class="input">
+                @opt("eceran", "Eceran", p.Input.Tipe)
+                @opt("grosir", "Grosir", p.Input.Tipe)
+                @opt("proyek", "Proyek", p.Input.Tipe)
+              </select>
+            }
+            @components.FormField(components.FormFieldProps{
+              ID: "harga_jual", Label: "Harga Jual (Rp)", Required: true,
+              Helper: "Masukkan dalam Rupiah utuh.",
+              Error: p.Errors["hargajual"],
+            }) {
+              @components.Input(components.InputProps{
+                ID: "harga_jual", Name: "harga_jual", Type: "number",
+                Value: int64Str(p.Input.HargaJual),
+                Required: true, Prefix: "Rp",
+                HasError: p.Errors["hargajual"] != "",
+                Attrs: templ.Attributes{ "min": "1", "step": "1" },
+              })
+            }
+            @components.FormField(components.FormFieldProps{
+              ID: "berlaku_dari", Label: "Berlaku Dari", Required: true,
+              Error: p.Errors["berlakudari"],
+            }) {
+              @components.Input(components.InputProps{
+                ID: "berlaku_dari", Name: "berlaku_dari", Type: "date",
+                Value: defaultDate(p.Input.BerlakuDari),
+                Required: true,
+                HasError: p.Errors["berlakudari"] != "",
+              })
+            }
+            <input type="hidden" name="gudang_id" value="0"/>
+            <button type="submit" class="btn-primary btn-md w-full">
+              @icon.Check(16, "")
+              <span>Simpan Harga</span>
+            </button>
+          </form>
+        }
+      </div>
+
+      <div class="lg:col-span-2">
+        @components.Card(components.CardProps{ Title: "History Harga", NoPad: true }) {
+          if len(p.History) == 0 {
+            @components.EmptyState(components.EmptyStateProps{
+              IconName: "clock",
+              Title: "Belum ada harga",
+              Description: "Set harga pertama untuk produk ini di kolom kiri.",
+            })
+          } else {
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-slate-200 text-sm">
+                <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th class="px-4 py-3 text-left font-medium">Berlaku</th>
+                    <th class="px-4 py-3 text-left font-medium">Tipe</th>
+                    <th class="px-4 py-3 text-left font-medium">Gudang</th>
+                    <th class="px-4 py-3 text-right font-medium">Harga</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 bg-white">
+                  for _, h := range p.History {
+                    <tr>
+                      <td class="px-4 py-2.5 text-slate-700 tabular-nums">
+                        { h.BerlakuDari.Format("2006-01-02") }
+                      </td>
+                      <td class="px-4 py-2.5">
+                        @components.Badge(h.Tipe, tipeBadgeVariant(h.Tipe))
+                      </td>
+                      <td class="px-4 py-2.5 text-slate-600">
+                        if h.GudangID == nil {
+                          <span class="text-slate-500">Semua gudang</span>
+                        } else {
+                          { fmt.Sprintf("Gudang #%d", *h.GudangID) }
+                        }
+                      </td>
+                      <td class="px-4 py-2.5 text-right tabular-nums font-medium">
+                        { components.FormatRupiah(h.HargaJual) }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        }
+      </div>
+    </div>
+  }
+}
+
+templ opt(value, label, current string) {
+  if value == current {
+    <option value={ value } selected>{ label }</option>
+  } else {
+    <option value={ value }>{ label }</option>
+  }
+}
+
+func int64Str(v int64) string {
+  if v == 0 {
+    return ""
+  }
+  return strconv.FormatInt(v, 10)
+}
+
+func defaultDate(s string) string {
+  if s != "" {
+    return s
+  }
+  return time.Now().Format("2006-01-02")
+}
+
+func tipeBadgeVariant(tipe string) string {
+  switch tipe {
+  case "eceran":
+    return "info"
+  case "grosir":
+    return "purple"
+  case "proyek":
+    return "warning"
+  }
+  return "default"
+}

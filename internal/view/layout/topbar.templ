@@ -1,0 +1,125 @@
+package layout
+
+import (
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+)
+
+// TopBar berisi breadcrumb (kiri), search global (tengah), profil + logout (kanan).
+templ TopBar(user UserData, crumbs []BreadcrumbItem) {
+  <header class="sticky top-0 z-20 h-16 bg-white/80 backdrop-blur border-b border-slate-200 px-4 md:px-6 flex items-center gap-3 md:gap-6">
+    <!-- Hamburger (mobile only) -->
+    <button
+      type="button"
+      class="md:hidden inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"
+      @click="$dispatch('toggle-sidebar')"
+      aria-label="Buka menu"
+    >
+      @icon.Render("menu", 20, "")
+    </button>
+    <!-- Breadcrumb -->
+    <nav class="flex-1 min-w-0" aria-label="Breadcrumb">
+      @breadcrumb(crumbs)
+    </nav>
+
+    <!-- Global Search -->
+    <div
+      class="hidden md:block w-80 relative"
+      x-data="globalSearch()"
+      @keydown.escape="close()"
+      @click.outside="close()"
+    >
+      <label class="relative block">
+        <span class="sr-only">Cari</span>
+        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+          @icon.Search(16, "")
+        </span>
+        <input
+          type="search"
+          name="q"
+          placeholder="Cari nomor kwitansi, mitra, produk..."
+          class="input pl-9 pr-12 h-9 text-sm bg-slate-50 border-slate-200 focus:bg-white w-full"
+          aria-label="Cari global"
+          autocomplete="off"
+          x-ref="input"
+          @focus="onFocus()"
+          @keydown.arrow-down.prevent="moveHighlight(1)"
+          @keydown.arrow-up.prevent="moveHighlight(-1)"
+          @keydown.enter.prevent="submitHighlight($event)"
+          hx-get="/search"
+          hx-trigger="keyup changed delay:300ms, focus"
+          hx-target="#search-results"
+          hx-swap="innerHTML"
+          hx-include="this"
+          @htmx:after-swap="onResults()"
+        />
+        <span class="absolute inset-y-0 right-0 flex items-center pr-2 text-slate-400">
+          <kbd class="hidden lg:inline-flex items-center rounded border border-slate-200 bg-white px-1.5 text-2xs font-mono text-slate-500">Ctrl K</kbd>
+        </span>
+      </label>
+      <div id="search-results" x-show="showResults" x-cloak class="relative"></div>
+    </div>
+
+    <!-- Right: status + gudang + profile -->
+    <div class="flex items-center gap-3">
+      @components.OnlineStatus()
+      @components.NotificationBell(components.NotificationBellProps{})
+      <button
+        type="button"
+        class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+        @click="$dispatch('keyboard-help:open')"
+        aria-label="Bantuan keyboard"
+        title="Bantuan keyboard (?)"
+      >
+        @icon.Render("info", 18, "")
+      </button>
+      if user.GudangName != "" {
+        <div class="hidden md:flex items-center gap-2 px-3 h-9 rounded-lg bg-slate-100 text-xs">
+          <span class="text-slate-500">Gudang</span>
+          <span class="font-medium text-slate-900">{ user.GudangName }</span>
+        </div>
+      }
+      <div class="flex items-center gap-2">
+        <a
+          href={ profileHref(user) }
+          class="inline-flex items-center gap-2 h-9 px-2 rounded-lg hover:bg-slate-100"
+          title={ user.Name }
+        >
+          <span class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-brand-100 text-brand-700 text-xs font-semibold">
+            { user.AvatarInit }
+          </span>
+          <span class="hidden lg:inline text-sm font-medium text-slate-900">{ user.Name }</span>
+        </a>
+        <a
+          href={ logoutHref(user) }
+          class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+          aria-label="Keluar"
+          title="Keluar"
+        >
+          @icon.LogOut(16, "")
+        </a>
+      </div>
+    </div>
+  </header>
+}
+
+templ breadcrumb(crumbs []BreadcrumbItem) {
+  <ol class="flex items-center gap-1.5 text-sm flex-wrap">
+    for i, c := range crumbs {
+      <li class="flex items-center gap-1.5">
+        if i == len(crumbs)-1 {
+          <span class="font-medium text-slate-900" aria-current="page" title={ c.Label }>{ c.Label }</span>
+        } else {
+          if c.Href != "" {
+            <a href={ templ.SafeURL(c.Href) } class="text-slate-500 hover:text-slate-900" title={ c.Label }>{ c.Label }</a>
+          } else {
+            <span class="text-slate-500" title={ c.Label }>{ c.Label }</span>
+          }
+          <span class="text-slate-300" aria-hidden="true">
+            @icon.ChevronRight(12, "")
+          </span>
+        }
+      </li>
+    }
+  </ol>
+}

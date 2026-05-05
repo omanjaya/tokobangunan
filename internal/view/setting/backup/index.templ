@@ -1,0 +1,97 @@
+package backup
+
+import (
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Index(p IndexProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Backup & Restore",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Pengaturan", Href: "/setting" },
+      { Label: "Backup" },
+    },
+  }) {
+    @components.PageHeader("Backup & Restore", "Kelola backup database PostgreSQL.") {
+      <form method="post" action="/setting/backup/run" class="inline">
+        <input type="hidden" name="csrf_token" value={ p.CSRFToken }/>
+        <button type="submit" class="btn-primary btn-md">
+          @icon.Render("download", 16, "")
+          <span>Buat Backup</span>
+        </button>
+      </form>
+    }
+
+    if p.Flash != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "success", Message: p.Flash })
+      </div>
+    }
+    if p.Error != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "danger", Message: p.Error })
+      </div>
+    }
+
+    @components.Alert(components.AlertProps{
+      Variant: "warning",
+      Title: "Operasi destructive",
+      Message: "Restore akan menimpa seluruh data database saat ini. Pastikan ada backup terbaru sebelum restore.",
+    })
+
+    @components.Card(components.CardProps{ NoPad: true, Class: "mt-4" }) {
+      if len(p.Files) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "database",
+          Title: "Belum ada backup",
+          Description: "Klik tombol 'Buat Backup' untuk membuat snapshot pertama.",
+        })
+      } else {
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th class="text-left font-medium px-4 py-2.5">Nama File</th>
+                <th class="text-left font-medium px-4 py-2.5">Tanggal</th>
+                <th class="text-right font-medium px-4 py-2.5">Ukuran</th>
+                <th class="text-right font-medium px-4 py-2.5">Aksi</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              for _, f := range p.Files {
+                <tr class="hover:bg-slate-50">
+                  <td class="px-4 py-2.5 font-mono text-xs">{ f.Name }</td>
+                  <td class="px-4 py-2.5 text-slate-700">{ f.ModTime.Format("02 Jan 2006 15:04") }</td>
+                  <td class="px-4 py-2.5 text-right tabular-nums text-slate-700">{ SizeHuman(f.Size) }</td>
+                  <td class="px-4 py-2.5 text-right">
+                    <div class="inline-flex items-center gap-2">
+                      <a href={ templ.SafeURL("/setting/backup/" + f.Name + "/download") }
+                         class="btn-ghost btn-sm" title="Download">
+                        @icon.Download(14, "")
+                        <span>Download</span>
+                      </a>
+                      @components.ConfirmForm(components.ConfirmFormProps{
+                        Action:      "/setting/backup/" + f.Name + "/restore",
+                        Title:       "Restore Database",
+                        Message:     "Restore dari " + f.Name + "? SEMUA data saat ini akan ditimpa. Aksi ini TIDAK bisa dibatalkan.",
+                        ConfirmText: "Restore Sekarang",
+                        Variant:     "danger",
+                        Trigger:     "Restore",
+                        TriggerVar:  "danger",
+                        CSRFToken:   p.CSRFToken,
+                      })
+                    </div>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    }
+  }
+}

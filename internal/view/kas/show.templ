@@ -1,0 +1,93 @@
+package kas
+
+import (
+  "fmt"
+
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Show(p ShowProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Detail Kas",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Kas", Href: "/kas" },
+      { Label: p.Cashflow.Nomor },
+    },
+  }) {
+    @components.PageHeader("Detail Kas", p.Cashflow.Nomor) {
+      if p.IsOwner {
+        <form method="post" action={ templ.SafeURL(fmt.Sprintf("/kas/%d/delete", p.Cashflow.ID)) }
+              onsubmit="return confirm('Hapus catatan kas ini? Tindakan tidak dapat dibatalkan.');">
+          @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Type: "submit" }) {
+            @icon.Trash(14, "")
+            <span>Hapus</span>
+          }
+        </form>
+      }
+    }
+
+    @components.Card(components.CardProps{ Title: "Informasi" }) {
+      <dl class="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6 text-sm">
+        <div>
+          <dt class="text-slate-500">Tanggal</dt>
+          <dd class="font-medium">{ p.Cashflow.Tanggal.Format("02 Jan 2006") }</dd>
+        </div>
+        <div>
+          <dt class="text-slate-500">Tipe</dt>
+          <dd>
+            if p.Cashflow.Tipe == "masuk" {
+              @components.Badge("Masuk", "success")
+            } else {
+              @components.Badge("Keluar", "danger")
+            }
+          </dd>
+        </div>
+        <div>
+          <dt class="text-slate-500">Kategori</dt>
+          <dd class="font-medium">{ p.Cashflow.Kategori }</dd>
+        </div>
+        <div>
+          <dt class="text-slate-500">Metode</dt>
+          <dd>{ p.Cashflow.Metode }</dd>
+        </div>
+        <div>
+          <dt class="text-slate-500">Jumlah</dt>
+          <dd class="font-bold text-lg">{ format.Rupiah(p.Cashflow.Jumlah) }</dd>
+        </div>
+        <div>
+          <dt class="text-slate-500">Gudang</dt>
+          <dd>
+            if p.Gudang != nil {
+              { p.Gudang.Nama }
+            } else {
+              <span class="text-slate-500">—</span>
+            }
+          </dd>
+        </div>
+        if p.Cashflow.Deskripsi != "" {
+          <div class="sm:col-span-2">
+            <dt class="text-slate-500">Deskripsi</dt>
+            <dd>{ p.Cashflow.Deskripsi }</dd>
+          </div>
+        }
+        if p.Cashflow.Referensi != "" {
+          <div class="sm:col-span-2">
+            <dt class="text-slate-500">Referensi</dt>
+            <dd class="font-mono">{ p.Cashflow.Referensi }</dd>
+          </div>
+        }
+        if p.Cashflow.Catatan != "" {
+          <div class="sm:col-span-2">
+            <dt class="text-slate-500">Catatan</dt>
+            <dd class="text-slate-700">{ p.Cashflow.Catatan }</dd>
+          </div>
+        }
+      </dl>
+    }
+  }
+}

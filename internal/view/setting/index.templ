@@ -1,0 +1,70 @@
+package setting
+
+import (
+  "fmt"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// IndexProps - landing page setting.
+type IndexProps struct {
+  Nav         layout.NavData
+  User        layout.UserData
+  GudangCount int
+}
+
+templ Index(p IndexProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Pengaturan",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{ { Label: "Pengaturan" } },
+  }) {
+    @components.PageHeader("Pengaturan", "Konfigurasi master data dan akun pengguna.") {}
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      @settingCard("/setting/gudang", "package", "Gudang", subtitleGudang(p.GudangCount))
+      @settingCard("/setting/user", "users", "User Management", "Akun pengguna sistem")
+      @settingCard("/setting/pajak", "receipt", "Pajak", "PPN, faktur pajak, identitas PKP")
+      @settingCard("/setting/printer", "printer", "Printer", "Template kwitansi & dot matrix")
+      @settingCard("/setting/audit-log", "clock", "Audit Log", "Riwayat perubahan data")
+      @settingCard("/setting/backup", "database", "Backup & Restore", "Snapshot database")
+    </div>
+  }
+}
+
+func subtitleGudang(n int) string {
+  if n <= 0 {
+    return "Master cabang"
+  }
+  return fmt.Sprintf("%d cabang terdaftar", n)
+}
+
+templ settingCard(href, iconName, title, subtitle string) {
+  <a href={ templ.SafeURL(href) } class="card p-5 hover:shadow-md transition-shadow group">
+    <div class="flex items-start gap-4">
+      <span class="shrink-0 w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center group-hover:bg-brand-100">
+        @icon.Render(iconName, 22, "")
+      </span>
+      <div class="min-w-0">
+        <h3 class="text-base font-semibold text-slate-900">{ title }</h3>
+        <p class="text-sm text-slate-500 mt-0.5">{ subtitle }</p>
+      </div>
+    </div>
+  </a>
+}
+
+templ settingCardDisabled(iconName, title, subtitle string) {
+  <div class="card p-5 opacity-60 cursor-not-allowed">
+    <div class="flex items-start gap-4">
+      <span class="shrink-0 w-10 h-10 rounded-lg bg-slate-100 text-slate-400 flex items-center justify-center">
+        @icon.Render(iconName, 22, "")
+      </span>
+      <div class="min-w-0">
+        <h3 class="text-base font-semibold text-slate-700">{ title }</h3>
+        <p class="text-sm text-slate-500 mt-0.5">{ subtitle }</p>
+      </div>
+    </div>
+  </div>
+}

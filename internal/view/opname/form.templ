@@ -1,0 +1,67 @@
+package opname
+
+import (
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Form(p FormProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Opname Baru",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Stok" },
+      { Label: "Opname", Href: "/opname" },
+      { Label: "Baru" },
+    },
+  }) {
+    @components.PageHeader("Opname Baru", "Header opname akan otomatis pre-fill item dari snapshot stok gudang.") {}
+
+    if p.General != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "danger", Message: p.General })
+      </div>
+    }
+
+    <form method="post" action="/opname" class="space-y-4 max-w-2xl">
+      @components.Card(components.CardProps{ Title: "Header Opname" }) {
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          @components.FormField(components.FormFieldProps{ ID: "tanggal", Label: "Tanggal", Required: true, Error: errOf(p, "tanggal") }) {
+            @components.Input(components.InputProps{ ID: "tanggal", Name: "tanggal", Type: "date", Value: p.Input.Tanggal, Required: true })
+          }
+          @components.FormField(components.FormFieldProps{ ID: "gudang_id", Label: "Gudang", Required: true, Error: errOf(p, "gudangid") }) {
+            <select id="gudang_id" name="gudang_id" class="input" required>
+              <option value="">— pilih gudang —</option>
+              for _, g := range p.Gudangs {
+                if g.ID == p.Input.GudangID {
+                  <option value={ strconv.FormatInt(g.ID, 10) } selected>{ g.Kode } — { g.Nama }</option>
+                } else {
+                  <option value={ strconv.FormatInt(g.ID, 10) }>{ g.Kode } — { g.Nama }</option>
+                }
+              }
+            </select>
+          }
+        </div>
+        <div class="mt-4">
+          @components.FormField(components.FormFieldProps{ ID: "catatan", Label: "Catatan" }) {
+            <textarea id="catatan" name="catatan" rows="2" class="input">{ p.Input.Catatan }</textarea>
+          }
+        </div>
+      }
+
+      <div class="flex justify-end gap-2">
+        @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: "/opname" }) {
+          <span>Batal</span>
+        }
+        @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+          @icon.Check(16, "")
+          <span>Buat Opname</span>
+        }
+      </div>
+    </form>
+  }
+}

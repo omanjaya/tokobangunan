@@ -1,0 +1,39 @@
+package components
+
+// DateRangeProps konfigurasi komponen rentang tanggal dengan preset.
+// NameFrom / NameTo dipakai sebagai input form name.
+type DateRangeProps struct {
+  From     string // "2026-05-01"
+  To       string
+  NameFrom string
+  NameTo   string
+  IDFrom   string // optional override id (default = NameFrom)
+  IDTo     string
+}
+
+// DateRange render dua input date + tombol preset.
+// Preset memanipulasi value via Alpine factory `dateRange()` di app.js.
+templ DateRange(p DateRangeProps) {
+  {{
+    idFrom := p.IDFrom
+    if idFrom == "" { idFrom = p.NameFrom }
+    idTo := p.IDTo
+    if idTo == "" { idTo = p.NameTo }
+  }}
+  <div x-data="dateRange()" class="flex flex-wrap items-center gap-2">
+    <div class="flex flex-wrap gap-1">
+      <button type="button" @click="preset('today')" class="btn-ghost btn-sm">Hari ini</button>
+      <button type="button" @click="preset('7d')" class="btn-ghost btn-sm">7 hari</button>
+      <button type="button" @click="preset('month')" class="btn-ghost btn-sm">Bulan ini</button>
+      <button type="button" @click="preset('lastmonth')" class="btn-ghost btn-sm">Bulan lalu</button>
+      <button type="button" @click="preset('year')" class="btn-ghost btn-sm">Tahun ini</button>
+    </div>
+    <div class="flex items-center gap-2">
+      <input type="date" id={ idFrom } name={ p.NameFrom } value={ p.From }
+             x-ref="from" class="input"/>
+      <span class="text-slate-400">—</span>
+      <input type="date" id={ idTo } name={ p.NameTo } value={ p.To }
+             x-ref="to" class="input"/>
+    </div>
+  </div>
+}

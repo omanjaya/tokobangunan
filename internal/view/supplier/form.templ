@@ -1,0 +1,147 @@
+package supplier
+
+import (
+  "fmt"
+
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Form(p FormProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: formTitle(p),
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Supplier", Href: "/supplier" },
+      { Label: formTitle(p) },
+    },
+  }) {
+    @components.PageHeader(formTitle(p), formSubtitle(p))
+
+    if p.General != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "danger", Message: p.General })
+      </div>
+    }
+
+    <form method="post" action={ templ.SafeURL(formAction(p)) } class="space-y-5">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+        @components.Card(components.CardProps{ Title: "Identitas" }) {
+          <div class="space-y-4">
+            @components.FormField(components.FormFieldProps{ ID: "kode", Label: "Kode", Required: true, Error: p.Errors["kode"], Helper: "Pengenal unik supplier (mis. SUP001)" }) {
+              @components.Input(components.InputProps{
+                ID: "kode", Name: "kode", Required: true,
+                Value: fieldString(p, "kode"),
+                HasError: p.Errors["kode"] != "",
+                Placeholder: "SUP001",
+              })
+            }
+            @components.FormField(components.FormFieldProps{ ID: "nama", Label: "Nama", Required: true, Error: p.Errors["nama"] }) {
+              @components.Input(components.InputProps{
+                ID: "nama", Name: "nama", Required: true,
+                Value: fieldString(p, "nama"),
+                HasError: p.Errors["nama"] != "",
+                Placeholder: "Nama supplier",
+              })
+            }
+            @components.FormField(components.FormFieldProps{ ID: "kontak", Label: "Kontak", Helper: "Telepon / WhatsApp / PIC", Error: p.Errors["kontak"] }) {
+              @components.Input(components.InputProps{
+                ID: "kontak", Name: "kontak",
+                Value: fieldString(p, "kontak"),
+                HasError: p.Errors["kontak"] != "",
+                Placeholder: "08xx-xxxx-xxxx",
+              })
+            }
+            <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" name="is_active" value="true" checked?={ fieldActive(p) } class="rounded border-slate-300"/>
+              <span>Aktif</span>
+            </label>
+          </div>
+        }
+
+        @components.Card(components.CardProps{ Title: "Detail" }) {
+          <div class="space-y-4">
+            @components.FormField(components.FormFieldProps{ ID: "alamat", Label: "Alamat", Error: p.Errors["alamat"] }) {
+              <textarea id="alamat" name="alamat" rows="3"
+                        class="input"
+                        placeholder="Alamat lengkap...">{ fieldString(p, "alamat") }</textarea>
+            }
+            @components.FormField(components.FormFieldProps{ ID: "catatan", Label: "Catatan", Error: p.Errors["catatan"] }) {
+              <textarea id="catatan" name="catatan" rows="4"
+                        class="input"
+                        placeholder="Catatan internal...">{ fieldString(p, "catatan") }</textarea>
+            }
+          </div>
+        }
+
+      </div>
+
+      <div class="flex items-center justify-end gap-2">
+        @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: "/supplier" }) {
+          <span>Batal</span>
+        }
+        @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+          @icon.Check(16, "")
+          <span>Simpan</span>
+        }
+      </div>
+    </form>
+  }
+}
+
+func formTitle(p FormProps) string {
+  if p.IsEdit {
+    return "Edit Supplier"
+  }
+  return "Tambah Supplier"
+}
+
+func formSubtitle(p FormProps) string {
+  if p.IsEdit {
+    return "Perbarui informasi supplier."
+  }
+  return "Tambah supplier baru."
+}
+
+func formAction(p FormProps) string {
+  if p.IsEdit && p.Item != nil {
+    return fmt.Sprintf("/supplier/%d", p.Item.ID)
+  }
+  return "/supplier"
+}
+
+func fieldString(p FormProps, name string) string {
+  if p.Item == nil {
+    return ""
+  }
+  switch name {
+  case "kode":
+    return p.Item.Kode
+  case "nama":
+    return p.Item.Nama
+  case "alamat":
+    return ptrStr(p.Item.Alamat)
+  case "kontak":
+    return ptrStr(p.Item.Kontak)
+  case "catatan":
+    return ptrStr(p.Item.Catatan)
+  }
+  return ""
+}
+
+func fieldActive(p FormProps) bool {
+  if p.Item == nil {
+    return true
+  }
+  return p.Item.IsActive
+}
+
+func ptrStr(s *string) string {
+  if s == nil {
+    return ""
+  }
+  return *s
+}

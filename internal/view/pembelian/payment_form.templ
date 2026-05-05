@@ -1,0 +1,50 @@
+package pembelian
+
+import (
+  "fmt"
+  "time"
+
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+)
+
+// PaymentForm card berisi form pencatatan pembayaran ke supplier.
+templ PaymentForm(p ShowProps) {
+  @components.Card(components.CardProps{ Title: "Catat Pembayaran", Subtitle: "Sisa hutang: " + format.Rupiah(p.Sisa) }) {
+    <form method="post" action={ templ.SafeURL(fmt.Sprintf("/pembelian/%d/bayar", p.Pembelian.ID)) } class="space-y-4">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        @components.FormField(components.FormFieldProps{ ID: "tanggal", Label: "Tanggal", Required: true }) {
+          @components.Input(components.InputProps{ ID: "tanggal", Name: "tanggal", Type: "date",
+            Value: time.Now().Format("2006-01-02"), Required: true })
+        }
+        @components.FormField(components.FormFieldProps{ ID: "jumlah", Label: "Jumlah (Rp)", Required: true }) {
+          @components.Input(components.InputProps{ ID: "jumlah", Name: "jumlah", Type: "number", Required: true,
+            Placeholder: "Mis. 5000000" })
+        }
+        @components.FormField(components.FormFieldProps{ ID: "metode", Label: "Metode", Required: true }) {
+          <select id="metode" name="metode" class="input" required>
+            <option value="tunai">Tunai</option>
+            <option value="transfer">Transfer</option>
+            <option value="cek">Cek</option>
+            <option value="giro">Giro</option>
+          </select>
+        }
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        @components.FormField(components.FormFieldProps{ ID: "referensi", Label: "Referensi (no. cek/transfer)" }) {
+          @components.Input(components.InputProps{ ID: "referensi", Name: "referensi", Type: "text" })
+        }
+        @components.FormField(components.FormFieldProps{ ID: "catatan", Label: "Catatan" }) {
+          <textarea id="catatan" name="catatan" rows="2" class="input"></textarea>
+        }
+      </div>
+      <div class="flex justify-end">
+        @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+          @icon.Check(16, "")
+          <span>Simpan Pembayaran</span>
+        }
+      </div>
+    </form>
+  }
+}

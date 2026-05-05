@@ -1,0 +1,16 @@
+package components
+
+// ToastTrigger di-render server-side untuk trigger toast inline (mis. setelah
+// HTMX swap). Component ini dibaca Alpine.js via @toast:add.window.
+//
+// Untuk trigger via HTMX response header pakai:
+//   c.Response().Header().Set("HX-Trigger",
+//     `{"showToast":{"variant":"success","title":"Tersimpan"}}`)
+// Helper JS app.js yang tangani.
+templ ToastTrigger(variant, title, message string) {
+  <div
+    x-data
+    x-init={ "$dispatch('toast:add', { variant: '" + jsEscape(variant) + "', title: '" + jsEscape(title) + "', message: '" + jsEscape(message) + "' })" }
+    class="hidden"
+  ></div>
+}

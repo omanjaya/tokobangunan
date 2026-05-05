@@ -1,0 +1,227 @@
+package stok
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/repo"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Index(p IndexProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Stok",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Inventori" },
+      { Label: "Stok" },
+    },
+  }) {
+    @components.PageHeader("Stok per Cabang", "Posisi stok produk di tiap gudang. Pakai mutasi untuk menambah/mengurangi stok antar cabang.")
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+      @summaryCard("Total Gudang", strconv.Itoa(len(p.Gudangs)), "package", "info")
+      @summaryCard("Total Produk", strconv.Itoa(p.Total), "package", "default")
+      @summaryCard("Stok Kritis", strconv.Itoa(p.LowStockCount), "alert-triangle", "warning")
+    </div>
+
+    @gudangTabs(p)
+
+    <div class="mt-4">
+      @filterBar(p)
+      @RefreshPartial(RefreshPartialProps{
+        GudangID:     p.ActiveGudangID,
+        Rows:         p.Rows,
+        Total:        p.Total,
+        Page:         p.Page,
+        TotalPages:   p.TotalPages,
+        Query:        p.Query,
+        Kategori:     p.Kategori,
+        LowStockOnly: p.LowStockOnly,
+      })
+    </div>
+  }
+}
+
+templ summaryCard(title, value, iconName, variant string) {
+  @components.Card(components.CardProps{}) {
+    <div class="flex items-center justify-between">
+      <div>
+        <p class="text-xs uppercase tracking-wide text-slate-500">{ title }</p>
+        <p class="text-2xl font-semibold text-slate-900 mt-1">{ value }</p>
+      </div>
+      <span class={ "p-2 rounded-lg", components.BadgeColor(variant) }>
+        @icon.Render(iconName, 20, "")
+      </span>
+    </div>
+  }
+}
+
+templ gudangTabs(p IndexProps) {
+  <div class="flex flex-wrap gap-2 border-b border-slate-200 pb-1">
+    for _, g := range p.Gudangs {
+      @tabLink(g, p.ActiveGudangID, p.Query, p.Kategori, p.LowStockOnly)
+    }
+  </div>
+}
+
+templ tabLink(g GudangLite, active int64, q, kat string, low bool) {
+  <a href={ templ.SafeURL(tabURL(g.ID, q, kat, low)) }
+     class={ "px-4 py-2 text-sm rounded-t-lg border-b-2 -mb-px",
+             tabClass(g.ID == active) }>
+    { g.Nama }
+  </a>
+}
+
+func tabURL(id int64, q, kat string, low bool) string {
+  u := fmt.Sprintf("/stok/%d", id)
+  sep := "?"
+  if q != "" {
+    u += sep + "q=" + q; sep = "&"
+  }
+  if kat != "" {
+    u += sep + "kategori=" + kat; sep = "&"
+  }
+  if low {
+    u += sep + "low=1"
+  }
+  return u
+}
+
+func tabClass(active bool) string {
+  if active {
+    return "border-brand-600 text-brand-700 font-medium bg-white"
+  }
+  return "border-transparent text-slate-500 hover:text-slate-700"
+}
+
+templ filterBar(p IndexProps) {
+  <form method="get" action={ templ.SafeURL(fmt.Sprintf("/stok/%d", p.ActiveGudangID)) }
+        class="flex flex-wrap items-end gap-3 mb-4">
+    <div class="flex-1 min-w-64">
+      @components.FormField(components.FormFieldProps{ ID: "q", Label: "Cari" }) {
+        @components.Input(components.InputProps{
+          ID: "q", Name: "q", Type: "search", Value: p.Query,
+          Placeholder: "Nama atau SKU...",
+        })
+      }
+    </div>
+    <div class="w-48">
+      @components.FormField(components.FormFieldProps{ ID: "kategori", Label: "Kategori" }) {
+        <select id="kategori" name="kategori" class="input">
+          <option value="">Semua kategori</option>
+          for _, k := range p.Kategoris {
+            if k == p.Kategori {
+              <option value={ k } selected>{ k }</option>
+            } else {
+              <option value={ k }>{ k }</option>
+            }
+          }
+        </select>
+      }
+    </div>
+    <label class="inline-flex items-center gap-2 text-sm text-slate-700 pb-2.5">
+      if p.LowStockOnly {
+        <input type="checkbox" name="low" value="1" checked
+               class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+      } else {
+        <input type="checkbox" name="low" value="1"
+               class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+      }
+      <span>Hanya stok kritis</span>
+    </label>
+    @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+      @icon.Filter(14, "")
+      <span>Terapkan</span>
+    }
+  </form>
+}
+
+templ stokTable(rows []repo.StokDetail) {
+  <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-sm">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">SKU</th>
+          <th class="px-4 py-3 text-left font-medium">Nama</th>
+          <th class="px-4 py-3 text-left font-medium">Kategori</th>
+          <th class="px-4 py-3 text-left font-medium">Satuan</th>
+          <th class="px-4 py-3 text-right font-medium">Stok</th>
+          <th class="px-4 py-3 text-right font-medium">Min</th>
+          <th class="px-4 py-3 text-left font-medium">Status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 bg-white">
+        for _, r := range rows {
+          @stokRow(r)
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+templ stokRow(r repo.StokDetail) {
+  <tr class="hover:bg-slate-50">
+    <td class="px-4 py-3 text-slate-700">{ r.ProdukSKU }</td>
+    <td class="px-4 py-3 font-medium text-slate-900">
+      <a href={ templ.SafeURL(fmt.Sprintf("/stok/produk/%d", r.ProdukID)) }
+         class="hover:text-brand-700">{ r.ProdukNama }</a>
+    </td>
+    <td class="px-4 py-3 text-slate-600">
+      if r.Kategori != nil {
+        { *r.Kategori }
+      } else {
+        <span class="text-slate-500">—</span>
+      }
+    </td>
+    <td class="px-4 py-3 text-slate-600">{ r.SatuanKode }</td>
+    <td class="px-4 py-3 text-right tabular-nums">{ fmt.Sprintf("%.4f", r.Qty) }</td>
+    <td class="px-4 py-3 text-right tabular-nums text-slate-500">{ fmt.Sprintf("%.4f", r.StokMinimum) }</td>
+    <td class="px-4 py-3">
+      @components.BadgeWithDot(StokStatusLabel(r.Qty, r.StokMinimum), StokStatusVariant(r.Qty, r.StokMinimum))
+    </td>
+  </tr>
+}
+
+templ paginationFooter(p IndexProps) {
+  <div class="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm text-slate-600">
+    <div>{ fmt.Sprintf("Total %d produk · halaman %d dari %d", p.Total, p.Page, p.TotalPages) }</div>
+    <div class="flex items-center gap-2">
+      if p.Page > 1 {
+        @components.Button(components.ButtonProps{
+          Variant: "secondary", Size: "sm",
+          Href: pageURL(p, p.Page-1),
+        }) {
+          @icon.ChevronLeft(14, "")
+          <span>Sebelumnya</span>
+        }
+      }
+      if p.Page < p.TotalPages {
+        @components.Button(components.ButtonProps{
+          Variant: "secondary", Size: "sm",
+          Href: pageURL(p, p.Page+1),
+        }) {
+          <span>Berikutnya</span>
+          @icon.ChevronRight(14, "")
+        }
+      }
+    </div>
+  </div>
+}
+
+func pageURL(p IndexProps, page int) string {
+  u := fmt.Sprintf("/stok/%d?page=%d", p.ActiveGudangID, page)
+  if p.Query != "" {
+    u += "&q=" + p.Query
+  }
+  if p.Kategori != "" {
+    u += "&kategori=" + p.Kategori
+  }
+  if p.LowStockOnly {
+    u += "&low=1"
+  }
+  return u
+}

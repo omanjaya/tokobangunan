@@ -1,0 +1,152 @@
+package produk
+
+import (
+  "strings"
+
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Index(p IndexProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Produk",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Master Data" },
+      { Label: "Produk" },
+    },
+  }) {
+    @components.PageHeader("Produk", "Master data barang dagangan, satuan, dan harga.") {
+      @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: "/satuan" }) {
+        @icon.Package(16, "")
+        <span>Satuan</span>
+      }
+      @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Href: "/produk/baru" }) {
+        @icon.Plus(16, "")
+        <span>Tambah Produk</span>
+      }
+    }
+
+    @filterBar(p)
+
+    @components.Card(components.CardProps{ NoPad: true }) {
+      if len(p.Rows) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "package",
+          Title: "Belum ada produk",
+          Description: "Klik 'Tambah Produk' untuk mulai mengisi master data.",
+        })
+      } else {
+        @produkTable(p.Rows)
+        @components.Pagination(components.PaginationProps{
+          Page: p.Page, PerPage: p.PerPage, Total: p.Total, TotalPages: p.TotalPages,
+          BaseURL: "/produk", QueryStr: produkQueryStr(p),
+        })
+      }
+    }
+  }
+}
+
+templ filterBar(p IndexProps) {
+  @components.MobileFilter() {
+  <form
+    method="get"
+    action="/produk"
+    hx-get="/produk"
+    hx-target="body"
+    hx-push-url="true"
+    hx-trigger="change from:select, keyup changed delay:300ms from:input[name='q']"
+    hx-indicator=".htmx-indicator"
+    class="flex flex-wrap items-end gap-3 mb-4"
+  >
+    <div class="flex-1 min-w-64">
+      @components.FormField(components.FormFieldProps{ ID: "q", Label: "Cari" }) {
+        @components.Input(components.InputProps{
+          ID: "q", Name: "q", Type: "search", Value: p.Query,
+          Placeholder: "Cari nama atau SKU...",
+        })
+      }
+    </div>
+    <div class="w-48">
+      @components.FormField(components.FormFieldProps{ ID: "kategori", Label: "Kategori" }) {
+        <select id="kategori" name="kategori" class="input">
+          <option value="">Semua kategori</option>
+          for _, k := range p.Kategoris {
+            if k == p.Kategori {
+              <option value={ k } selected>{ k }</option>
+            } else {
+              <option value={ k }>{ k }</option>
+            }
+          }
+        </select>
+      }
+    </div>
+    <label class="inline-flex items-center gap-2 text-sm text-slate-700 pb-2.5">
+      if p.OnlyActive {
+        <input type="checkbox" name="aktif" value="1" checked
+               class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+      } else {
+        <input type="checkbox" name="aktif" value="1"
+               class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+      }
+      <span>Aktif saja</span>
+    </label>
+    <noscript>
+      <button type="submit" class="btn-secondary btn-md">
+        @icon.Filter(14, "")
+        <span>Terapkan</span>
+      </button>
+    </noscript>
+    @components.HxIndicator()
+  </form>
+  }
+}
+
+templ produkTable(rows []Row) {
+  <div x-data="bulkSelect()" class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+    <table class="min-w-full divide-y divide-slate-200 text-sm" x-data="tableNav('/produk/:id/edit')">
+      <thead class="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-sm">
+        <tr>
+          <th class="px-3 py-3 w-8">
+            <input type="checkbox" :checked="isAll()" @change="toggleAll($event)"
+                   class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+          </th>
+          <th class="px-3 py-3 w-12 text-left font-medium">Foto</th>
+          <th class="px-4 py-3 text-left font-medium">SKU</th>
+          <th class="px-4 py-3 text-left font-medium">Nama</th>
+          <th class="px-4 py-3 text-left font-medium">Kategori</th>
+          <th class="px-4 py-3 text-left font-medium">Satuan</th>
+          <th class="px-4 py-3 text-right font-medium">Harga Eceran</th>
+          <th class="px-4 py-3 text-right font-medium">Stok Min</th>
+          <th class="px-4 py-3 text-left font-medium">Status</th>
+          <th class="px-4 py-3 text-right font-medium">Aksi</th>
+        </tr>
+      </thead>
+      <tbody id="produk-rows" class="divide-y divide-slate-100 bg-white">
+        for _, r := range rows {
+          @Row_(r)
+        }
+      </tbody>
+    </table>
+    @components.BulkActionBar(components.BulkActionBarProps{
+      FormName: "ids", DeleteURL: "/produk/bulk/delete", ItemLabel: "produk",
+    })
+  </div>
+}
+
+// produkQueryStr build query string untuk preserve filter di Pagination.
+func produkQueryStr(p IndexProps) string {
+  parts := make([]string, 0, 3)
+  if p.Query != "" {
+    parts = append(parts, "q="+p.Query)
+  }
+  if p.Kategori != "" {
+    parts = append(parts, "kategori="+p.Kategori)
+  }
+  if p.OnlyActive {
+    parts = append(parts, "aktif=1")
+  }
+  return strings.Join(parts, "&")
+}

@@ -1,0 +1,290 @@
+package penjualan
+
+import (
+  "fmt"
+
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/terbilang"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// mitraKontak resolve mitra.Kontak menjadi string aman.
+func mitraKontak(m *domain.Mitra) string {
+  if m == nil || m.Kontak == nil { return "" }
+  return *m.Kontak
+}
+
+// mitraEmail - kalau Kontak terlihat seperti email, pakai sebagai default;
+// untuk Fase 1 mitra belum punya field email khusus, jadi heuristik sederhana.
+func mitraEmail(m *domain.Mitra) string {
+  if m == nil || m.Kontak == nil { return "" }
+  k := *m.Kontak
+  if hasAt := indexAt(k); hasAt >= 0 {
+    return k
+  }
+  return ""
+}
+
+func indexAt(s string) int {
+  for i := 0; i < len(s); i++ {
+    if s[i] == '@' { return i }
+  }
+  return -1
+}
+
+// shareActions - tombol Email, WhatsApp, dan Salin Link.
+templ shareActions(penjualanID int64, mitraKontakStr, mitraEmailStr string) {
+  {{ idStr := fmt.Sprintf("%d", penjualanID) }}
+  <div class="relative" x-data={ "{ open:false, modal:'', email:'" + mitraEmailStr + "', phone:'" + mitraKontakStr + "', message:'', sending:false }" }>
+    <button @click="open = !open" type="button" class="btn-secondary btn-md">
+      @icon.Render("share-2", 16, "")
+      <span>Bagikan</span>
+      @icon.ChevronDown(14, "")
+    </button>
+    <div x-show="open" x-cloak @click.outside="open = false"
+         class="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-lg shadow-lg z-20">
+      <button type="button" @click="modal='email'; open=false"
+              class="w-full text-left block px-3 py-2 text-sm hover:bg-brand-50">
+         Kirim via Email
+      </button>
+      <button type="button" @click="modal='wa'; open=false"
+              class="w-full text-left block px-3 py-2 text-sm hover:bg-brand-50">
+         Kirim via WhatsApp
+      </button>
+      <button type="button"
+              { templ.Attributes{ "@click": "modal='link'; open=false; fetch('/penjualan/" + idStr + "/share-link', {method:'POST', headers:{'X-CSRF-Token':document.querySelector('meta[name=csrf-token]')?.content||''}}).then(r=>r.json()).then(d=>{ window._shareURL=d.url; });" }... }
+              class="w-full text-left block px-3 py-2 text-sm hover:bg-brand-50">
+         Buat Link PDF Publik
+      </button>
+    </div>
+
+    <!-- Modal Email -->
+    <div x-show="modal==='email'" x-cloak
+         class="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4">
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-5 space-y-3">
+        <h3 class="text-lg font-semibold">Kirim Kwitansi via Email</h3>
+        <label class="block text-sm">
+          <span class="text-slate-700">Tujuan</span>
+          <input type="email" x-model="email" class="input mt-1" placeholder="email@mitra.com"/>
+        </label>
+        <label class="block text-sm">
+          <span class="text-slate-700">Pesan (opsional)</span>
+          <textarea x-model="message" rows="3" class="input mt-1" placeholder="Pesan custom..."></textarea>
+        </label>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" class="btn-ghost btn-md" @click="modal=''">Batal</button>
+          <button type="button" class="btn-primary btn-md"
+                  :disabled="sending"
+                  { templ.Attributes{ "@click": "sending=true; const fd=new FormData(); fd.append('to', email); fd.append('message', message); fd.append('csrf_token', document.querySelector('meta[name=csrf-token]')?.content||''); fetch('/penjualan/" + idStr + "/email', {method:'POST', body:fd}).then(r=>r.json()).then(d=>{ sending=false; if(d.success){ alert(d.message||'Email terkirim'); modal=''; } else { if(d.setup_url){ if(confirm('SMTP belum dikonfigurasi. Buka pengaturan?')) location.href=d.setup_url; } else { alert(d.error||'Gagal kirim'); } } });" }... }>
+            <span x-text="sending ? 'Mengirim...' : 'Kirim'"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal WhatsApp -->
+    <div x-show="modal==='wa'" x-cloak
+         class="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4">
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-5 space-y-3">
+        <h3 class="text-lg font-semibold">Kirim via WhatsApp</h3>
+        <label class="block text-sm">
+          <span class="text-slate-700">Nomor WhatsApp</span>
+          <input type="tel" x-model="phone" class="input mt-1" placeholder="08xxxxxxxxxx"/>
+          <span class="text-xs text-slate-500">Akan otomatis di-format dengan kode negara 62.</span>
+        </label>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" class="btn-ghost btn-md" @click="modal=''">Batal</button>
+          <button type="button" class="btn-primary btn-md"
+                  { templ.Attributes{ "@click": "fetch('/penjualan/" + idStr + "/wa-link?to='+encodeURIComponent(phone)).then(r=>r.json()).then(d=>{ if(d.url){ window.open(d.url, '_blank'); modal=''; } else { alert(d.message||'Gagal'); } });" }... }>
+            Buka WhatsApp
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Link -->
+    <div x-show="modal==='link'" x-cloak
+         class="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4">
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-5 space-y-3">
+        <h3 class="text-lg font-semibold">Link PDF Publik</h3>
+        <p class="text-sm text-slate-600">Link berikut bisa dibagikan langsung. Berlaku 24 jam.</p>
+        <input type="text" readonly :value="window._shareURL || 'Memuat...'" class="input"/>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" class="btn-ghost btn-md" @click="modal=''">Tutup</button>
+          <button type="button" class="btn-primary btn-md"
+                  @click="navigator.clipboard.writeText(window._shareURL||''); alert('Link disalin');">
+            Salin
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+templ Show(p ShowProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Detail Penjualan",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Transaksi" },
+      { Label: "Penjualan", Href: "/penjualan" },
+      { Label: p.Penjualan.NomorKwitansi },
+    },
+  }) {
+    @components.PageHeader("Detail Penjualan", p.Penjualan.NomorKwitansi) {
+      @components.Button(components.ButtonProps{
+        Variant: "secondary",
+        Href:    fmt.Sprintf("/penjualan/baru?from=%d", p.Penjualan.ID),
+      }) {
+        @icon.Plus(14, "")
+        <span>Buat Serupa</span>
+      }
+      <div class="relative" x-data="{ open: false }">
+        <button @click="open = !open" type="button" class="btn-primary btn-md">
+          @icon.Printer(16, "")
+          <span>Cetak</span>
+          @icon.ChevronDown(14, "")
+        </button>
+        <div x-show="open" x-cloak @click.outside="open = false"
+             class="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-lg shadow-lg z-20">
+          <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/pdf?copy=asli", p.Penjualan.ID)) }
+             target="_blank" class="block px-3 py-2 text-sm hover:bg-brand-50">
+             Kwitansi A5 — ASLI
+          </a>
+          <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/pdf?copy=tembusan", p.Penjualan.ID)) }
+             target="_blank" class="block px-3 py-2 text-sm hover:bg-brand-50">
+             Kwitansi A5 — TEMBUSAN
+          </a>
+          if p.Penjualan.PPNAmount > 0 {
+            <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/faktur", p.Penjualan.ID)) }
+               target="_blank" class="block px-3 py-2 text-sm hover:bg-brand-50 border-t">
+               Faktur Pajak (PPN)
+            </a>
+          }
+          <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/escp", p.Penjualan.ID)) }
+             class="block px-3 py-2 text-sm hover:bg-brand-50">
+             Dot Matrix (ESC/P)
+          </a>
+          <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/58mm", p.Penjualan.ID)) }
+             class="block px-3 py-2 text-sm hover:bg-brand-50">
+             Thermal 58mm
+          </a>
+          <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d/print/80mm", p.Penjualan.ID)) }
+             class="block px-3 py-2 text-sm hover:bg-brand-50">
+             Thermal 80mm
+          </a>
+        </div>
+      </div>
+      @shareActions(p.Penjualan.ID, mitraKontak(p.Mitra), mitraEmail(p.Mitra))
+    }
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-2 space-y-4">
+        @components.Card(components.CardProps{ Title: "Item" }) {
+          <table class="min-w-full divide-y divide-slate-200 text-sm">
+            <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th class="px-3 py-2 text-left">Produk</th>
+                <th class="px-3 py-2 text-right">Qty</th>
+                <th class="px-3 py-2 text-left">Sat</th>
+                <th class="px-3 py-2 text-right">Harga</th>
+                <th class="px-3 py-2 text-right">Diskon</th>
+                <th class="px-3 py-2 text-right">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              for _, it := range p.Penjualan.Items {
+                <tr>
+                  <td class="px-3 py-2">{ it.ProdukNama }</td>
+                  <td class="px-3 py-2 text-right">{ fmt.Sprintf("%g", it.Qty) }</td>
+                  <td class="px-3 py-2">{ it.SatuanKode }</td>
+                  <td class="px-3 py-2 text-right num">{ format.Rupiah(it.HargaSatuan) }</td>
+                  <td class="px-3 py-2 text-right num">{ format.Rupiah(it.Diskon) }</td>
+                  <td class="px-3 py-2 text-right font-medium num">{ format.Rupiah(it.Subtotal) }</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </div>
+
+      <div class="space-y-4">
+        @components.Card(components.CardProps{ Title: "Informasi" }) {
+          <dl class="text-sm space-y-2">
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Tanggal</dt>
+              <dd>{ p.Penjualan.Tanggal.Format("02 Jan 2006") }</dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Mitra</dt>
+              <dd class="font-medium">
+                if p.Mitra != nil {
+                  { p.Mitra.Nama }
+                }
+              </dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Gudang</dt>
+              <dd>
+                if p.Gudang != nil {
+                  { p.Gudang.Nama }
+                }
+              </dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Status</dt>
+              <dd>
+                @statusBadge(string(p.Penjualan.StatusBayar))
+              </dd>
+            </div>
+            if p.Penjualan.JatuhTempo != nil {
+              <div class="flex justify-between">
+                <dt class="text-slate-500">Jatuh Tempo</dt>
+                <dd>{ p.Penjualan.JatuhTempo.Format("02 Jan 2006") }</dd>
+              </div>
+            }
+            if p.Penjualan.Catatan != "" {
+              <div>
+                <dt class="text-slate-500 mb-1">Catatan</dt>
+                <dd class="text-slate-700">{ p.Penjualan.Catatan }</dd>
+              </div>
+            }
+          </dl>
+        }
+        @components.Card(components.CardProps{ Title: "Total" }) {
+          <dl class="text-sm space-y-2">
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Subtotal</dt>
+              <dd class="num">{ format.Rupiah(p.Penjualan.Subtotal) }</dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Diskon</dt>
+              <dd class="num">{ format.Rupiah(p.Penjualan.Diskon) }</dd>
+            </div>
+            if p.Penjualan.PPNAmount > 0 {
+              <div class="flex justify-between border-t pt-2">
+                <dt class="text-slate-500">DPP</dt>
+                <dd class="num">{ format.Rupiah(p.Penjualan.DPP) }</dd>
+              </div>
+              <div class="flex justify-between">
+                <dt class="text-slate-500">{ fmt.Sprintf("PPN %.1f%%", p.Penjualan.PPNPersen) }</dt>
+                <dd class="num">{ format.Rupiah(p.Penjualan.PPNAmount) }</dd>
+              </div>
+            }
+            <div class="flex justify-between border-t pt-2">
+              <dt class="font-semibold">Total</dt>
+              <dd class="font-bold text-lg num">{ format.Rupiah(p.Penjualan.Total) }</dd>
+            </div>
+            <div class="text-xs text-slate-500 italic mt-2">
+              Terbilang: { terbilang.Konversi(p.Penjualan.Total / 100) }
+            </div>
+          </dl>
+        }
+      </div>
+    </div>
+  }
+}

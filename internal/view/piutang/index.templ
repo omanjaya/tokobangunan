@@ -1,0 +1,206 @@
+package piutang
+
+import (
+  "fmt"
+  "strconv"
+  "strings"
+
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Index(p IndexProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Piutang",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Keuangan" },
+      { Label: "Piutang" },
+    },
+  }) {
+    @components.PageHeader("Piutang", "Daftar mitra dengan tagihan kredit/sebagian.") {
+    }
+
+    @summaryCards(p.Buckets)
+
+    @components.FilterChips(piutangPresets(), piutangPresetKey(p))
+    @filterBar(p)
+
+    @components.Card(components.CardProps{ NoPad: true }) {
+      if len(p.Items) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "inbox",
+          Title: "Tidak ada piutang",
+          Description: "Tidak ada mitra dengan piutang outstanding sesuai filter.",
+        })
+      } else {
+        @indexTable(p.Items)
+        @components.Pagination(components.PaginationProps{
+          Page: p.Page, PerPage: p.PerPage, Total: p.Total, TotalPages: p.TotalPages,
+          BaseURL: "/piutang", QueryStr: piutangQueryStr(p),
+        })
+      }
+    }
+  }
+}
+
+templ summaryCards(b map[domain.PiutangAging]int64) {
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+    @bucketCard("Total", totalAll(b), "default")
+    @bucketCard("Belum tempo", b[domain.AgingCurrent], "success")
+    @bucketCard("1-30 hari", b[domain.Aging1to30], "info")
+    @bucketCard("31-90 hari", b[domain.Aging31to60] + b[domain.Aging61to90], "warning")
+    @bucketCard("> 90 hari", b[domain.Aging90Plus], "danger")
+  </div>
+}
+
+templ bucketCard(title string, amount int64, variant string) {
+  <div class={ "card p-4 border", bucketBorder(variant) }>
+    <p class="text-xs uppercase tracking-wide text-slate-500">{ title }</p>
+    <p class={ "kpi-value mt-1", bucketText(variant) }>{ format.Rupiah(amount) }</p>
+  </div>
+}
+
+func bucketBorder(v string) string {
+  switch v {
+  case "success": return "border-emerald-200 bg-emerald-50/40"
+  case "info":    return "border-sky-200 bg-sky-50/40"
+  case "warning": return "border-amber-200 bg-amber-50/40"
+  case "danger":  return "border-rose-200 bg-rose-50/40"
+  default:        return "border-slate-200 bg-white"
+  }
+}
+
+func bucketText(v string) string {
+  switch v {
+  case "success": return "text-emerald-700"
+  case "info":    return "text-sky-700"
+  case "warning": return "text-amber-700"
+  case "danger":  return "text-rose-700"
+  default:        return "text-slate-900"
+  }
+}
+
+func totalAll(b map[domain.PiutangAging]int64) int64 {
+  var s int64
+  for _, v := range b {
+    s += v
+  }
+  return s
+}
+
+templ filterBar(p IndexProps) {
+  @components.MobileFilter() {
+  <form method="get" action="/piutang" class="flex flex-wrap items-end gap-3 mb-4">
+    <div class="w-64">
+      @components.FormField(components.FormFieldProps{ ID: "q", Label: "Cari mitra" }) {
+        @components.Input(components.InputProps{ ID: "q", Name: "q", Type: "search",
+          Value: p.Query, Placeholder: "Nama atau kode mitra" })
+      }
+    </div>
+    <div class="w-48">
+      @components.FormField(components.FormFieldProps{ ID: "aging", Label: "Aging" }) {
+        <select id="aging" name="aging" class="input">
+          <option value="">Semua</option>
+          @agingOption("current", "Belum tempo", p.Aging)
+          @agingOption("1-30", "1-30 hari", p.Aging)
+          @agingOption("31-60", "31-60 hari", p.Aging)
+          @agingOption("61-90", "61-90 hari", p.Aging)
+          @agingOption("90+", "> 90 hari", p.Aging)
+        </select>
+      }
+    </div>
+    <button type="submit" class="btn-secondary btn-md">
+      @icon.Filter(14, "")
+      <span>Terapkan</span>
+    </button>
+    @components.HxIndicator()
+  </form>
+  }
+}
+
+templ agingOption(value, label, current string) {
+  if value == current {
+    <option value={ value } selected>{ label }</option>
+  } else {
+    <option value={ value }>{ label }</option>
+  }
+}
+
+templ indexTable(rows []domain.PiutangSummary) {
+  <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-sm">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Kode</th>
+          <th class="px-4 py-3 text-left font-medium">Nama Mitra</th>
+          <th class="px-4 py-3 text-right font-medium">Outstanding</th>
+          <th class="px-4 py-3 text-left font-medium">Invoice Tertua</th>
+          <th class="px-4 py-3 text-right font-medium">Jml Invoice</th>
+          <th class="px-4 py-3 text-left font-medium">Aging</th>
+          <th class="px-4 py-3 text-right font-medium">Aksi</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 bg-white">
+        for _, r := range rows {
+          <tr>
+            <td class="px-4 py-3 font-mono text-xs">{ r.MitraKode }</td>
+            <td class="px-4 py-3 font-medium">{ r.MitraNama }</td>
+            <td class="px-4 py-3 text-right font-semibold num">{ format.Rupiah(r.Outstanding) }</td>
+            <td class="px-4 py-3">
+              if r.InvoiceTertua != nil {
+                { r.InvoiceTertua.Format("02 Jan 2006") }
+              } else {
+                <span class="text-slate-500">-</span>
+              }
+            </td>
+            <td class="px-4 py-3 text-right">{ strconv.Itoa(r.JumlahInvoice) }</td>
+            <td class="px-4 py-3">
+              @components.Badge(AgingLabel(r.Aging), AgingVariant(r.Aging))
+            </td>
+            <td class="px-4 py-3 text-right">
+              <a href={ templ.SafeURL(fmt.Sprintf("/piutang/%d", r.MitraID)) }
+                 class="text-brand-600 hover:underline text-sm">Detail</a>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+// piutangQueryStr build query string untuk preserve filter di Pagination.
+func piutangQueryStr(p IndexProps) string {
+  parts := make([]string, 0, 2)
+  if p.Query != "" {
+    parts = append(parts, "q="+p.Query)
+  }
+  if p.Aging != "" {
+    parts = append(parts, "aging="+p.Aging)
+  }
+  return strings.Join(parts, "&")
+}
+
+// piutangPresets - chip filter untuk halaman /piutang.
+func piutangPresets() []components.FilterPreset {
+  return []components.FilterPreset{
+    { Key: "all_chip",  Label: "Semua",       URL: "/piutang" },
+    { Key: "current",   Label: "Belum tempo", URL: "/piutang?aging=current" },
+    { Key: "1-30",      Label: "1-30 hari",   URL: "/piutang?aging=1-30" },
+    { Key: "31-60",     Label: "31-60 hari",  URL: "/piutang?aging=31-60" },
+    { Key: "61-90",     Label: "61-90 hari",  URL: "/piutang?aging=61-90" },
+    { Key: "90+",       Label: "Overdue 90+", URL: "/piutang?aging=90+" },
+  }
+}
+
+// piutangPresetKey - "all_chip" bila tidak ada aging, else nilai Aging.
+func piutangPresetKey(p IndexProps) string {
+  if p.Aging == "" {
+    return "all_chip"
+  }
+  return p.Aging
+}

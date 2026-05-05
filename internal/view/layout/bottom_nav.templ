@@ -1,0 +1,52 @@
+package layout
+
+import "github.com/omanjaya/tokobangunan/internal/view/icon"
+
+// BottomNav - mobile bottom navigation untuk akses cepat ke fitur utama.
+// Hanya tampil di < md, sembunyi di tablet/desktop (sidebar yang dipakai).
+templ BottomNav(activePath string) {
+  <nav class="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200 px-1 pt-1 pb-safe shadow-[0_-2px_8px_rgba(0,0,0,0.04)]"
+       aria-label="Navigasi bawah">
+    <div class="grid grid-cols-5 gap-0.5">
+      @bottomNavItem("/dashboard", "home", "Beranda", activePath)
+      @bottomNavItem("/penjualan/baru", "shopping-cart", "Jual", activePath)
+      @bottomNavItem("/produk", "package", "Produk", activePath)
+      @bottomNavItem("/piutang", "clock", "Piutang", activePath)
+      @bottomNavMore(activePath)
+    </div>
+  </nav>
+}
+
+templ bottomNavItem(href, iconName, label, activePath string) {
+  <a href={ templ.SafeURL(href) }
+     class={ "flex flex-col items-center justify-center gap-0.5 py-2 rounded-md text-xs",
+             bottomNavActiveClass(href, activePath) }
+     aria-current={ bottomNavAriaCurrent(href, activePath) }>
+    @icon.Render(iconName, 22, "")
+    <span class="leading-none">{ label }</span>
+  </a>
+}
+
+templ bottomNavMore(activePath string) {
+  <button type="button"
+          @click="$dispatch('toggle-sidebar')"
+          class="flex flex-col items-center justify-center gap-0.5 py-2 rounded-md text-xs text-slate-600 hover:text-slate-900"
+          aria-label="Buka menu lainnya">
+    @icon.Render("menu", 22, "")
+    <span class="leading-none">Lainnya</span>
+  </button>
+}
+
+func bottomNavActiveClass(href, activePath string) string {
+  if href == activePath || (href != "/" && hasPrefix(activePath, href)) {
+    return "text-brand-700 bg-brand-50"
+  }
+  return "text-slate-600 hover:text-slate-900"
+}
+
+func bottomNavAriaCurrent(href, activePath string) string {
+  if href == activePath || (href != "/" && hasPrefix(activePath, href)) {
+    return "page"
+  }
+  return ""
+}

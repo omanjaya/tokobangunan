@@ -1,0 +1,38 @@
+package components
+
+import "github.com/omanjaya/tokobangunan/internal/view/icon"
+
+// EmptyStateProps - state ketika data kosong.
+// IconName default "inbox" bila kosong.
+// IllustrationName (opsional) "empty" | "error" | "offline" | "success".
+// Bila di-set, ilustrasi SVG besar dipakai alih-alih icon kecil.
+type EmptyStateProps struct {
+  IconName         string
+  IllustrationName string
+  Title            string
+  Description      string
+  Class            string
+}
+
+templ EmptyState(p EmptyStateProps) {
+  <div class={ "flex flex-col items-center justify-center py-16 px-6 text-center", p.Class }>
+    if p.IllustrationName != "" {
+      <div class="text-slate-300 mb-4 w-32 h-32">
+        @IllustrationRender(p.IllustrationName, "w-full h-full")
+      </div>
+    } else {
+      <span class="text-slate-300 mb-4">
+        @icon.Render(emptyStringFallback(p.IconName, "inbox"), 48, "")
+      </span>
+    }
+    if p.Title != "" {
+      <h3 class="text-base font-semibold text-slate-900">{ p.Title }</h3>
+    }
+    if p.Description != "" {
+      <p class="text-sm text-slate-500 mt-1 max-w-sm">{ p.Description }</p>
+    }
+    <div class="mt-4 flex items-center gap-2">
+      { children... }
+    </div>
+  </div>
+}

@@ -1,0 +1,189 @@
+package laporan
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Cashflow(p CashflowProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Laporan Cashflow",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Laporan", Href: "/laporan" },
+      { Label: "Cashflow" },
+    },
+  }) {
+    @components.PageHeader("Laporan Cashflow", "Aliran kas masuk vs keluar dan tren harian.") {
+      @exportButtons("/laporan/cashflow/export", cashflowExportQuery(p))
+    }
+
+    @presetChips("/laporan/cashflow")
+    @cashflowFilter(p)
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+      @cashflowKPI("Kas Masuk", p.Summary.TotalMasuk, "trending-up", "text-emerald-700", "bg-emerald-50", 0)
+      @cashflowKPI("Kas Keluar", p.Summary.TotalKeluar, "trending-down", "text-rose-700", "bg-rose-50", 0)
+      @cashflowKPI("Net Cashflow", p.Summary.NetCashflow, "wallet", netClassR(p.Summary.NetCashflow), netBgR(p.Summary.NetCashflow), p.PrevDelta)
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+      <div class="lg:col-span-2">
+        @components.Card(components.CardProps{ Title: "Tren Harian (Net)" }) {
+          if len(p.Daily) == 0 {
+            <p class="text-sm text-slate-500">Tidak ada data pada periode ini.</p>
+          } else {
+            @cashflowSparkline(p.Daily)
+          }
+        }
+      </div>
+      <div>
+        @components.Card(components.CardProps{ Title: "Top Kategori Pengeluaran" }) {
+          if len(p.TopKategori) == 0 {
+            <p class="text-sm text-slate-500">Belum ada pengeluaran.</p>
+          } else {
+            <ul class="space-y-2 text-sm">
+              for _, k := range p.TopKategori {
+                <li class="flex items-center justify-between gap-2">
+                  <span class="text-slate-700 truncate" title={ k.Kategori }>{ k.Kategori }</span>
+                  <span class="text-rose-700 num shrink-0">{ format.Rupiah(k.Total) }</span>
+                </li>
+              }
+            </ul>
+          }
+        }
+      </div>
+    </div>
+
+    @components.Card(components.CardProps{ Title: "Transaksi", NoPad: true }) {
+      if len(p.Items) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "wallet",
+          Title: "Tidak ada transaksi kas",
+          Description: "Belum ada catatan kas masuk/keluar pada periode ini.",
+        })
+      } else {
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-slate-200 text-sm">
+            <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th class="px-4 py-3 text-left">Tanggal</th>
+                <th class="px-4 py-3 text-left">Nomor</th>
+                <th class="px-4 py-3 text-left">Tipe</th>
+                <th class="px-4 py-3 text-left">Kategori</th>
+                <th class="px-4 py-3 text-left">Deskripsi</th>
+                <th class="px-4 py-3 text-right">Jumlah</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 bg-white">
+              for _, c := range p.Items {
+                <tr>
+                  <td class="px-4 py-3">{ c.Tanggal.Format("02 Jan 2006") }</td>
+                  <td class="px-4 py-3 font-mono text-xs">{ c.Nomor }</td>
+                  <td class="px-4 py-3">
+                    if c.Tipe == "masuk" {
+                      @components.Badge("Masuk", "success")
+                    } else {
+                      @components.Badge("Keluar", "danger")
+                    }
+                  </td>
+                  <td class="px-4 py-3">{ c.Kategori }</td>
+                  <td class="px-4 py-3 truncate max-w-md text-slate-600" title={ c.Deskripsi }>{ c.Deskripsi }</td>
+                  <td class="px-4 py-3 text-right tabular-nums whitespace-nowrap num">{ format.Rupiah(c.Jumlah) }</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    }
+  }
+}
+
+templ cashflowFilter(p CashflowProps) {
+  @components.MobileFilter() {
+  <form method="get" action="/laporan/cashflow" class="flex flex-wrap items-end gap-3 mb-4">
+    <div>
+      <div class="text-xs font-medium text-slate-700 mb-1">Periode</div>
+      @components.DateRange(components.DateRangeProps{
+        From: p.From, To: p.To,
+        NameFrom: "from", NameTo: "to",
+      })
+    </div>
+    <div class="w-56">
+      @components.FormField(components.FormFieldProps{ ID: "gudang_id", Label: "Gudang" }) {
+        <select id="gudang_id" name="gudang_id" class="input">
+          <option value="0">Semua gudang</option>
+          for _, g := range p.Gudangs {
+            if g.ID == p.GudangID {
+              <option value={ strconv.FormatInt(g.ID, 10) } selected>{ g.Kode } — { g.Nama }</option>
+            } else {
+              <option value={ strconv.FormatInt(g.ID, 10) }>{ g.Kode } — { g.Nama }</option>
+            }
+          }
+        </select>
+      }
+    </div>
+    <button type="submit" class="btn-secondary btn-md">
+      @icon.Filter(14, "")
+      <span>Terapkan</span>
+    </button>
+    @components.HxIndicator()
+  </form>
+  }
+}
+
+templ cashflowKPI(title string, amount int64, iconName, textClass, bgClass string, delta int64) {
+  <div class={ "card p-4 flex items-start gap-3", bgClass }>
+    <span class={ "shrink-0 w-10 h-10 rounded-lg bg-white flex items-center justify-center", textClass }>
+      @icon.Render(iconName, 22, "")
+    </span>
+    <div class="min-w-0">
+      <div class="text-xs uppercase tracking-wide text-slate-500">{ title }</div>
+      <div class={ "kpi-value mt-0.5", textClass }>{ format.Rupiah(amount) }</div>
+      if delta != 0 {
+        <div class="text-xs text-slate-500 mt-1">
+          { deltaLabel(delta) }
+        </div>
+      }
+    </div>
+  </div>
+}
+
+// Sparkline minimalis SVG untuk daily trend net.
+templ cashflowSparkline(points []domain.CashflowDailyPoint) {
+  <div class="overflow-hidden">
+    @templ.Raw(buildSparklineSVG(points))
+  </div>
+}
+
+func deltaLabel(delta int64) string {
+  if delta > 0 {
+    return fmt.Sprintf("▲ %s vs periode sebelumnya", format.Rupiah(delta))
+  }
+  if delta < 0 {
+    return fmt.Sprintf("▼ %s vs periode sebelumnya", format.Rupiah(-delta))
+  }
+  return ""
+}
+
+func netClassR(v int64) string {
+  if v < 0 {
+    return "text-rose-700"
+  }
+  return "text-emerald-700"
+}
+
+func netBgR(v int64) string {
+  if v < 0 {
+    return "bg-rose-50"
+  }
+  return "bg-emerald-50"
+}

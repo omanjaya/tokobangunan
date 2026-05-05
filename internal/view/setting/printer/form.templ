@@ -1,0 +1,183 @@
+package printerview
+
+import (
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// FormData - state form template printer.
+type FormData struct {
+  GudangID     int64
+  Jenis        string
+  Nama         string
+  LebarChar    int
+  PanjangBaris int
+  OffsetX      int
+  OffsetY      int
+  Koordinat    string
+  IsDefault    bool
+}
+
+// FormProps - props form (create/edit).
+type FormProps struct {
+  Nav       layout.NavData
+  User      layout.UserData
+  Mode      string // "create" | "edit"
+  ID        int64
+  CSRFToken string
+  Gudangs   []domain.Gudang
+  Form      FormData
+  Error     string
+}
+
+templ Form(p FormProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: formTitle(p.Mode),
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Pengaturan", Href: "/setting" },
+      { Label: "Template Printer", Href: "/setting/printer" },
+      { Label: formTitle(p.Mode) },
+    },
+  }) {
+    @components.PageHeader(formTitle(p.Mode), "Konfigurasi printer dot matrix per gudang.") {}
+
+    if p.Error != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "danger", Title: "Gagal menyimpan", Message: p.Error })
+      </div>
+    }
+
+    @components.Card(components.CardProps{}) {
+      <form method="post" action={ templ.SafeURL(formAction(p)) } class="space-y-4 max-w-3xl">
+        <input type="hidden" name="csrf_token" value={ p.CSRFToken }/>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          @components.FormField(components.FormFieldProps{ ID: "gudang_id", Label: "Gudang", Required: true }) {
+            <select id="gudang_id" name="gudang_id" required class="input">
+              <option value="">— Pilih gudang —</option>
+              for _, g := range p.Gudangs {
+                if g.ID == p.Form.GudangID {
+                  <option value={ idToStr(g.ID) } selected>{ g.Nama }</option>
+                } else {
+                  <option value={ idToStr(g.ID) }>{ g.Nama }</option>
+                }
+              }
+            </select>
+          }
+
+          @components.FormField(components.FormFieldProps{ ID: "jenis", Label: "Jenis", Required: true }) {
+            <select id="jenis" name="jenis" required class="input">
+              @jenisOption("kwitansi", "Kwitansi", p.Form.Jenis)
+              @jenisOption("struk", "Struk", p.Form.Jenis)
+              @jenisOption("label", "Label", p.Form.Jenis)
+            </select>
+          }
+        </div>
+
+        @components.FormField(components.FormFieldProps{ ID: "nama", Label: "Nama Template", Required: true }) {
+          @components.Input(components.InputProps{
+            ID: "nama", Name: "nama", Value: p.Form.Nama, Required: true,
+            Placeholder: "Kwitansi NCR Standar",
+          })
+        }
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          @components.FormField(components.FormFieldProps{ ID: "lebar_char", Label: "Lebar (char)", Helper: "default 80" }) {
+            @components.Input(components.InputProps{
+              ID: "lebar_char", Name: "lebar_char", Type: "number",
+              Value: intToStr(p.Form.LebarChar), Placeholder: "80",
+            })
+          }
+          @components.FormField(components.FormFieldProps{ ID: "panjang_baris", Label: "Panjang (baris)", Helper: "default 33" }) {
+            @components.Input(components.InputProps{
+              ID: "panjang_baris", Name: "panjang_baris", Type: "number",
+              Value: intToStr(p.Form.PanjangBaris), Placeholder: "33",
+            })
+          }
+          @components.FormField(components.FormFieldProps{ ID: "offset_x", Label: "Offset X" }) {
+            @components.Input(components.InputProps{
+              ID: "offset_x", Name: "offset_x", Type: "number",
+              Value: intToStr(p.Form.OffsetX), Placeholder: "0",
+            })
+          }
+          @components.FormField(components.FormFieldProps{ ID: "offset_y", Label: "Offset Y" }) {
+            @components.Input(components.InputProps{
+              ID: "offset_y", Name: "offset_y", Type: "number",
+              Value: intToStr(p.Form.OffsetY), Placeholder: "0",
+            })
+          }
+        </div>
+
+        @components.FormField(components.FormFieldProps{ ID: "koordinat", Label: "Koordinat (JSON)", Helper: "Object JSON. Contoh: {\"nomor_x\": 10, \"nomor_y\": 2}" }) {
+          <textarea id="koordinat" name="koordinat" rows="6" class="input font-mono text-xs"
+            placeholder="{}">{ p.Form.Koordinat }</textarea>
+        }
+
+        <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+          if p.Form.IsDefault {
+            <input type="checkbox" name="is_default" value="on" checked
+                   class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+          } else {
+            <input type="checkbox" name="is_default" value="on"
+                   class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+          }
+          <span>Jadikan default untuk gudang & jenis ini</span>
+        </label>
+
+        if p.Mode == "edit" {
+          <div class="rounded-lg border border-dashed border-slate-200 p-4 bg-slate-50">
+            <div class="text-xs font-medium text-slate-700 mb-2">Test Print Preview (ASCII)</div>
+            <pre id="test-preview" class="text-[10px] leading-tight font-mono text-slate-600 bg-white rounded p-2 overflow-x-auto" style="white-space:pre"></pre>
+            <button
+              type="button"
+              class="btn-secondary btn-sm mt-2"
+              hx-post={ "/setting/printer/" + idToStr(p.ID) + "/test" }
+              hx-headers={ `{"X-CSRF-Token":"` + p.CSRFToken + `"}` }
+              hx-target="#test-preview"
+              hx-swap="innerHTML"
+            >
+              @icon.Render("printer", 14, "")
+              <span>Test Print</span>
+            </button>
+          </div>
+        }
+
+        <div class="flex items-center gap-2 pt-2">
+          @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+            @icon.Check(16, "")
+            <span>Simpan</span>
+          }
+          @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: "/setting/printer" }) {
+            <span>Batal</span>
+          }
+        </div>
+      </form>
+    }
+  }
+}
+
+templ jenisOption(value, label, current string) {
+  if value == current {
+    <option value={ value } selected>{ label }</option>
+  } else {
+    <option value={ value }>{ label }</option>
+  }
+}
+
+func formTitle(mode string) string {
+  if mode == "edit" {
+    return "Edit Template Printer"
+  }
+  return "Tambah Template Printer"
+}
+
+func formAction(p FormProps) string {
+  if p.Mode == "edit" {
+    return "/setting/printer/" + idToStr(p.ID)
+  }
+  return "/setting/printer"
+}

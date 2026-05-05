@@ -1,0 +1,127 @@
+package laporan
+
+import (
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ LR(p LRProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Laporan Laba-Rugi",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Laporan", Href: "/laporan" },
+      { Label: "Laba-Rugi" },
+    },
+  }) {
+    @components.PageHeader("Laporan Laba-Rugi", "Penjualan vs pembelian per cabang.") {
+      @exportButtons("/laporan/lr/export", lrExportQuery(p))
+    }
+
+    @presetChips("/laporan/lr")
+    @rangeForm("/laporan/lr", p.From, p.To)
+
+    @components.Card(components.CardProps{ NoPad: true }) {
+      if len(p.Rows) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "bar-chart-3",
+          Title: "Tidak ada data",
+          Description: "Tidak ada penjualan atau pembelian pada rentang tanggal ini.",
+        })
+      } else {
+        @lrTable(p)
+      }
+    }
+  }
+}
+
+templ lrTable(p LRProps) {
+  <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-sm">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Gudang</th>
+          <th class="px-4 py-3 text-right font-medium">Penjualan</th>
+          <th class="px-4 py-3 text-right font-medium">Pembelian (HPP)</th>
+          <th class="px-4 py-3 text-right font-medium">Gross Profit</th>
+          <th class="px-4 py-3 text-right font-medium">Biaya Operasional</th>
+          <th class="px-4 py-3 text-right font-medium">Net Income</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 bg-white">
+        for _, r := range p.Rows {
+          <tr>
+            <td class="px-4 py-3 font-medium">{ r.GudangNama }</td>
+            <td class="px-4 py-3 text-right tabular-nums font-mono">{ format.Rupiah(r.Penjualan) }</td>
+            <td class="px-4 py-3 text-right tabular-nums font-mono">{ format.Rupiah(r.Pembelian) }</td>
+            <td class="px-4 py-3 text-right tabular-nums font-mono">{ format.Rupiah(r.GrossProfit) }</td>
+            <td class="px-4 py-3 text-right tabular-nums font-mono text-slate-500">{ format.Rupiah(r.BiayaOperasional) }</td>
+            <td class={ "px-4 py-3 text-right tabular-nums font-mono font-semibold", netClass(r.NetIncome) }>
+              { format.Rupiah(r.NetIncome) }
+            </td>
+          </tr>
+        }
+      </tbody>
+      <tfoot class="bg-slate-50 font-medium">
+        <tr>
+          <td class="px-4 py-3">Total</td>
+          <td class="px-4 py-3 text-right tabular-nums font-mono">{ format.Rupiah(sumLR(p.Rows, "penjualan")) }</td>
+          <td class="px-4 py-3 text-right tabular-nums font-mono">{ format.Rupiah(sumLR(p.Rows, "pembelian")) }</td>
+          <td class="px-4 py-3 text-right tabular-nums font-mono">{ format.Rupiah(sumLR(p.Rows, "gross")) }</td>
+          <td class="px-4 py-3 text-right tabular-nums font-mono text-slate-500">{ format.Rupiah(sumLR(p.Rows, "biaya")) }</td>
+          <td class={ "px-4 py-3 text-right tabular-nums font-mono", netClass(sumLR(p.Rows, "net")) }>
+            { format.Rupiah(sumLR(p.Rows, "net")) }
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+}
+
+// presetChips renders preset periode chips di atas DateRange.
+templ presetChips(basePath string) {
+  <div class="flex flex-wrap items-center gap-1.5 mb-3">
+    <span class="text-xs font-medium text-slate-500 mr-1">Preset:</span>
+    for _, c := range PresetChipList() {
+      <a href={ templ.SafeURL(basePath + "?preset=" + c.Key) }
+         class="inline-flex px-2 py-1 rounded-md text-xs bg-slate-100 hover:bg-slate-200 text-slate-700">
+        { c.Label }
+      </a>
+    }
+  </div>
+}
+
+// exportButtons - tombol export XLSX & PDF.
+templ exportButtons(baseURL, query string) {
+  <div class="flex items-center gap-2">
+    <a href={ templ.SafeURL(baseURL + ".xlsx" + query) }
+       class="btn-secondary btn-md">
+      @icon.Download(14, "")
+      <span>XLSX</span>
+    </a>
+    <a href={ templ.SafeURL(baseURL + ".pdf" + query) } target="_blank"
+       class="btn-secondary btn-md">
+      @icon.Download(14, "")
+      <span>PDF</span>
+    </a>
+  </div>
+}
+
+templ rangeForm(action, from, to string) {
+  <form method="get" action={ templ.SafeURL(action) } class="flex flex-wrap items-end gap-3 mb-4">
+    <div>
+      <div class="text-xs font-medium text-slate-700 mb-1">Periode</div>
+      @components.DateRange(components.DateRangeProps{
+        From: from, To: to,
+        NameFrom: "from", NameTo: "to",
+      })
+    </div>
+    <button type="submit" class="btn-secondary btn-md">
+      @icon.Filter(14, "")
+      <span>Terapkan</span>
+    </button>
+  </form>
+}

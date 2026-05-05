@@ -1,0 +1,201 @@
+package mutasi
+
+import (
+  "fmt"
+  "time"
+
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Show(p ShowProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Mutasi " + p.Mutasi.NomorMutasi,
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Inventori" },
+      { Label: "Mutasi", Href: "/mutasi" },
+      { Label: p.Mutasi.NomorMutasi },
+    },
+  }) {
+    @components.PageHeader(p.Mutasi.NomorMutasi, "Detail dokumen mutasi antar gudang.") {
+      if p.CanCancel {
+        <form method="post" action={ templ.SafeURL(fmt.Sprintf("/mutasi/%d/cancel", p.Mutasi.ID)) }>
+          @components.Button(components.ButtonProps{ Variant: "ghost", Size: "md", Type: "submit" }) {
+            @icon.X(16, "")
+            <span>Batalkan</span>
+          }
+        </form>
+      }
+      if p.CanSubmit {
+        <form method="post" action={ templ.SafeURL(fmt.Sprintf("/mutasi/%d/submit", p.Mutasi.ID)) }>
+          @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+            @icon.Truck(16, "")
+            <span>Kirim Sekarang</span>
+          }
+        </form>
+      }
+      if p.CanReceive {
+        <form method="post" action={ templ.SafeURL(fmt.Sprintf("/mutasi/%d/receive", p.Mutasi.ID)) }>
+          @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+            @icon.Check(16, "")
+            <span>Konfirmasi Diterima</span>
+          }
+        </form>
+      }
+    }
+
+    if p.FlashError != "" {
+      @components.Alert(components.AlertProps{ Variant: "danger", Message: p.FlashError })
+    }
+
+    @timeline(p.Mutasi.Status)
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      @components.Card(components.CardProps{ Title: "Informasi" }) {
+        <dl class="text-sm space-y-2">
+          <div class="flex justify-between"><dt class="text-slate-500">Tanggal</dt><dd class="font-medium">{ p.Mutasi.Tanggal.Format("2006-01-02") }</dd></div>
+          <div class="flex justify-between"><dt class="text-slate-500">Status</dt>
+            <dd>@components.BadgeWithDot(StatusLabel(p.Mutasi.Status), StatusBadgeVariant(p.Mutasi.Status))</dd>
+          </div>
+          <div class="flex justify-between"><dt class="text-slate-500">Asal</dt><dd class="font-medium">{ p.GudangAsalNama }</dd></div>
+          <div class="flex justify-between"><dt class="text-slate-500">Tujuan</dt><dd class="font-medium">{ p.GudangTujuanNama }</dd></div>
+          if p.Mutasi.Catatan != "" {
+            <div><dt class="text-slate-500 mb-1">Catatan</dt><dd class="text-slate-700">{ p.Mutasi.Catatan }</dd></div>
+          }
+        </dl>
+      }
+
+      @components.Card(components.CardProps{ Title: "Pengiriman" }) {
+        <dl class="text-sm space-y-2">
+          <div class="flex justify-between"><dt class="text-slate-500">Pengirim</dt><dd>{ defaultStr(p.UserPengirimName, "—") }</dd></div>
+          <div class="flex justify-between"><dt class="text-slate-500">Tgl Kirim</dt><dd>{ formatTimePtr(p.Mutasi.TanggalKirim) }</dd></div>
+          <div class="flex justify-between"><dt class="text-slate-500">Penerima</dt><dd>{ defaultStr(p.UserPenerimaName, "—") }</dd></div>
+          <div class="flex justify-between"><dt class="text-slate-500">Tgl Terima</dt><dd>{ formatTimePtr(p.Mutasi.TanggalTerima) }</dd></div>
+        </dl>
+      }
+
+      @components.Card(components.CardProps{ Title: "Ringkasan" }) {
+        <dl class="text-sm space-y-2">
+          <div class="flex justify-between"><dt class="text-slate-500">Jumlah Item</dt><dd class="font-medium">{ fmt.Sprintf("%d baris", len(p.Items)) }</dd></div>
+          <div class="flex justify-between"><dt class="text-slate-500">Total Qty (Konversi)</dt><dd class="font-medium">{ fmt.Sprintf("%.2f", totalQtyKonversi(p.Items)) }</dd></div>
+        </dl>
+      }
+    </div>
+
+    <div class="mt-4">
+      @components.Card(components.CardProps{ NoPad: true, Title: "" }) {
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-slate-200 text-sm">
+            <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="px-4 py-3 text-left font-medium">Produk</th>
+                <th class="px-4 py-3 text-right font-medium">Qty</th>
+                <th class="px-4 py-3 text-left font-medium">Satuan</th>
+                <th class="px-4 py-3 text-right font-medium">Qty Konversi</th>
+                <th class="px-4 py-3 text-right font-medium">Harga Internal</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 bg-white">
+              for _, it := range p.Items {
+                <tr>
+                  <td class="px-4 py-3 font-medium text-slate-900">{ it.Item.ProdukNama }</td>
+                  <td class="px-4 py-3 text-right">{ fmt.Sprintf("%.4f", it.Item.Qty) }</td>
+                  <td class="px-4 py-3 text-slate-600">{ it.Item.SatuanKode }</td>
+                  <td class="px-4 py-3 text-right">{ fmt.Sprintf("%.4f", it.Item.QtyKonversi) }</td>
+                  <td class="px-4 py-3 text-right text-slate-700">{ it.HargaInternalText }</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </div>
+  }
+}
+
+// timeline - stepper visual horizontal status mutasi.
+templ timeline(s domain.StatusMutasi) {
+  <div class="flex items-center gap-2 mb-6">
+    @stepNode("Draft", isStepDone(s, domain.StatusDraft), s == domain.StatusDraft)
+    <div class={ "h-px flex-1", stepLineCls(isStepDone(s, domain.StatusDikirim)) }></div>
+    @stepNode("Dikirim", isStepDone(s, domain.StatusDikirim), s == domain.StatusDikirim)
+    <div class={ "h-px flex-1", stepLineCls(isStepDone(s, domain.StatusDiterima)) }></div>
+    @stepNode("Diterima", isStepDone(s, domain.StatusDiterima), s == domain.StatusDiterima)
+    if s == domain.StatusDibatalkan {
+      <div class="ml-3 inline-flex items-center gap-2">
+        @components.BadgeWithDot("Dibatalkan", "default")
+      </div>
+    }
+  </div>
+}
+
+templ stepNode(label string, done, current bool) {
+  <div class="flex items-center gap-2">
+    <span class={ "inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-semibold ring-2", stepNodeCls(done, current) }>
+      if done {
+        @icon.Check(14, "")
+      } else {
+        <span>·</span>
+      }
+    </span>
+    <span class={ "text-sm font-medium", stepLabelCls(done, current) }>{ label }</span>
+  </div>
+}
+
+func stepNodeCls(done, current bool) string {
+  if done {
+    return "bg-emerald-500 text-white ring-emerald-100"
+  }
+  if current {
+    return "bg-sky-500 text-white ring-sky-100"
+  }
+  return "bg-slate-200 text-slate-500 ring-slate-100"
+}
+
+func stepLabelCls(done, current bool) string {
+  if done || current {
+    return "text-slate-900"
+  }
+  return "text-slate-400"
+}
+
+func stepLineCls(done bool) string {
+  if done {
+    return "bg-emerald-300"
+  }
+  return "bg-slate-200"
+}
+
+func isStepDone(current, step domain.StatusMutasi) bool {
+  rank := func(s domain.StatusMutasi) int {
+    switch s {
+    case domain.StatusDraft:
+      return 1
+    case domain.StatusDikirim:
+      return 2
+    case domain.StatusDiterima:
+      return 3
+    }
+    return 0
+  }
+  return rank(current) > rank(step)
+}
+
+func totalQtyKonversi(items []ShowItem) float64 {
+  var t float64
+  for _, it := range items {
+    t += it.Item.QtyKonversi
+  }
+  return t
+}
+
+func formatTimePtr(t *time.Time) string {
+  if t == nil {
+    return "—"
+  }
+  return t.Format("2006-01-02 15:04")
+}

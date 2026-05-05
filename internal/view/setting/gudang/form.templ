@@ -1,0 +1,115 @@
+package gudangview
+
+import (
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// FormData - state form gudang.
+type FormData struct {
+  Kode     string
+  Nama     string
+  Alamat   string
+  Telepon  string
+  IsActive bool
+}
+
+// FormProps - props form gudang (create/edit).
+type FormProps struct {
+  Nav       layout.NavData
+  User      layout.UserData
+  Mode      string // "create" | "edit"
+  ID        int64
+  CSRFToken string
+  Form      FormData
+  Error     string
+}
+
+templ Form(p FormProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: formTitle(p.Mode),
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Pengaturan", Href: "/setting" },
+      { Label: "Gudang", Href: "/setting/gudang" },
+      { Label: formTitle(p.Mode) },
+    },
+  }) {
+    @components.PageHeader(formTitle(p.Mode), "Master cabang/lokasi gudang.") {}
+
+    if p.Error != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "danger", Title: "Gagal menyimpan", Message: p.Error })
+      </div>
+    }
+
+    @components.Card(components.CardProps{}) {
+      <form method="post" action={ templ.SafeURL(formAction(p)) } class="space-y-4 max-w-2xl">
+        <input type="hidden" name="csrf_token" value={ p.CSRFToken }/>
+
+        @components.FormField(components.FormFieldProps{ ID: "kode", Label: "Kode", Required: true, Helper: "Huruf kapital A-Z dan underscore. Contoh: CANGGU, GUDANG_PUSAT." }) {
+          @components.Input(components.InputProps{
+            ID: "kode", Name: "kode", Value: p.Form.Kode, Required: true,
+            Placeholder: "CANGGU",
+            Class: "uppercase",
+          })
+        }
+
+        @components.FormField(components.FormFieldProps{ ID: "nama", Label: "Nama", Required: true }) {
+          @components.Input(components.InputProps{
+            ID: "nama", Name: "nama", Value: p.Form.Nama, Required: true,
+            Placeholder: "Cabang Canggu",
+          })
+        }
+
+        @components.FormField(components.FormFieldProps{ ID: "alamat", Label: "Alamat" }) {
+          <textarea id="alamat" name="alamat" rows="2" class="input" placeholder="Alamat lengkap...">{ p.Form.Alamat }</textarea>
+        }
+
+        @components.FormField(components.FormFieldProps{ ID: "telepon", Label: "Telepon" }) {
+          @components.Input(components.InputProps{
+            ID: "telepon", Name: "telepon", Type: "tel", Value: p.Form.Telepon,
+            Placeholder: "0361xxxxxxx",
+          })
+        }
+
+        <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+          if p.Form.IsActive {
+            <input type="checkbox" name="is_active" value="on" checked
+                   class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+          } else {
+            <input type="checkbox" name="is_active" value="on"
+                   class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+          }
+          <span>Aktif</span>
+        </label>
+
+        <div class="flex items-center gap-2 pt-2">
+          @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+            @icon.Check(16, "")
+            <span>Simpan</span>
+          }
+          @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: "/setting/gudang" }) {
+            <span>Batal</span>
+          }
+        </div>
+      </form>
+    }
+  }
+}
+
+func formTitle(mode string) string {
+  if mode == "edit" {
+    return "Edit Gudang"
+  }
+  return "Tambah Gudang"
+}
+
+func formAction(p FormProps) string {
+  if p.Mode == "edit" {
+    return "/setting/gudang/" + idToStr(p.ID)
+  }
+  return "/setting/gudang"
+}

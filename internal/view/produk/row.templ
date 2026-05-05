@@ -1,0 +1,103 @@
+package produk
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+)
+
+// Row_ - satu baris tabel produk. Underscore agar tidak bentrok dengan struct Row.
+templ Row_(r Row) {
+  <tr id={ rowID(r.Produk.ID) } data-id={ strconv.FormatInt(r.Produk.ID, 10) }>
+    <td class="px-3 py-3 w-8">
+      <input type="checkbox" :value={ strconv.FormatInt(r.Produk.ID, 10) } x-model="selected"
+             class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+    </td>
+    <td class="px-3 py-3 w-12">
+      if r.Produk.FotoURL != nil && *r.Produk.FotoURL != "" {
+        <img src={ *r.Produk.FotoURL } alt="" class="h-10 w-10 rounded object-cover border border-slate-200"/>
+      } else {
+        <div class="h-10 w-10 rounded bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400">
+          @icon.Package(16, "")
+        </div>
+      }
+    </td>
+    <td class="px-4 py-3 font-mono text-xs text-slate-700">{ r.Produk.SKU }</td>
+    <td class="px-4 py-3">
+      <div class="font-medium text-slate-900">{ r.Produk.Nama }</div>
+    </td>
+    <td class="px-4 py-3 text-slate-600">
+      if r.Produk.Kategori != nil {
+        { *r.Produk.Kategori }
+      } else {
+        <span class="text-slate-500">—</span>
+      }
+    </td>
+    <td class="px-4 py-3 text-slate-600">
+      { r.SatuanKecil }
+      if r.SatuanBesar != "" {
+        <span class="text-slate-500 text-xs">
+          { fmt.Sprintf(" / %s · %s", r.SatuanBesar, components.FormatNumber(r.Produk.FaktorKonversi)) }
+        </span>
+      }
+    </td>
+    <td class="px-4 py-3 text-right tabular-nums whitespace-nowrap num">
+      if r.HargaEceran.HasValue {
+        { components.FormatRupiah(r.HargaEceran.Cents) }
+      } else {
+        <span class="text-slate-500">—</span>
+      }
+    </td>
+    <td class="px-4 py-3 text-right tabular-nums text-slate-600">
+      { components.FormatNumber(r.Produk.StokMinimum) }
+    </td>
+    <td class="px-4 py-3">
+      if r.Produk.IsActive {
+        @components.Badge("Aktif", "success")
+      } else {
+        @components.Badge("Non-aktif", "default")
+      }
+    </td>
+    <td class="px-4 py-3">
+      <div class="flex items-center justify-end gap-1">
+        <a href={ templ.SafeURL(fmt.Sprintf("/produk/%d/harga", r.Produk.ID)) }
+           class="inline-flex items-center justify-center w-8 h-8 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+           title="Harga"
+           aria-label="Atur harga">
+          @icon.Render("bar-chart-3", 16, "")
+        </a>
+        <a href={ templ.SafeURL(fmt.Sprintf("/produk/%d/label?count=10", r.Produk.ID)) }
+           target="_blank"
+           class="inline-flex items-center justify-center w-8 h-8 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+           title="Cetak label barcode (10 pcs)"
+           aria-label="Cetak label barcode">
+          @icon.Render("printer", 16, "")
+        </a>
+        <a href={ templ.SafeURL(fmt.Sprintf("/produk/%d/edit", r.Produk.ID)) }
+           class="inline-flex items-center justify-center w-8 h-8 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+           title="Edit"
+           aria-label="Edit produk">
+          @icon.Pencil(16, "")
+        </a>
+        <button
+          type="button"
+          hx-post={ fmt.Sprintf("/produk/%d/delete", r.Produk.ID) }
+          hx-target={ "#" + rowID(r.Produk.ID) }
+          hx-swap="outerHTML"
+          hx-confirm="Hapus produk ini? Aksi ini tidak bisa dibatalkan."
+          class="inline-flex items-center justify-center w-8 h-8 rounded-md text-rose-500 hover:text-rose-700 hover:bg-rose-50"
+          title="Hapus"
+          aria-label="Hapus produk"
+        >
+          @icon.Trash(16, "")
+        </button>
+      </div>
+    </td>
+  </tr>
+}
+
+func rowID(id int64) string {
+  return fmt.Sprintf("produk-row-%d", id)
+}

@@ -1,0 +1,93 @@
+package penjualan
+
+import (
+  "fmt"
+
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/terbilang"
+)
+
+// KwitansiPreviewProps - mirror PDF/ESC-P layout di HTML untuk preview.
+type KwitansiPreviewProps struct {
+  Penjualan *domain.Penjualan
+  Mitra     *domain.Mitra
+  Gudang    *domain.Gudang
+  Watermark string
+}
+
+templ KwitansiPreview(p KwitansiPreviewProps) {
+  <div class="kwitansi mx-auto bg-white shadow-md p-8 max-w-2xl text-slate-900 font-serif relative">
+    if p.Watermark != "" {
+      <div class="absolute inset-0 flex items-center justify-center pointer-events-none select-none">
+        <span class="text-7xl font-bold text-slate-200 -rotate-45">{ p.Watermark }</span>
+      </div>
+    }
+    <div class="relative text-center mb-4">
+      <h2 class="text-xl font-bold uppercase">{ p.Gudang.Nama }</h2>
+      if p.Gudang.Alamat != nil {
+        <p class="text-sm">{ *p.Gudang.Alamat }</p>
+      }
+      if p.Gudang.Telepon != nil {
+        <p class="text-sm">Telp: { *p.Gudang.Telepon }</p>
+      }
+      <hr class="my-2 border-slate-400"/>
+      <h1 class="text-2xl font-bold tracking-wider">KWITANSI</h1>
+    </div>
+
+    <div class="relative grid grid-cols-2 gap-2 text-sm mb-3">
+      <div><strong>No:</strong> { p.Penjualan.NomorKwitansi }</div>
+      <div class="text-right"><strong>Tanggal:</strong> { p.Penjualan.Tanggal.Format("02 January 2006") }</div>
+    </div>
+
+    <div class="relative text-sm space-y-1 mb-3">
+      <div><strong>Sudah terima dari:</strong> { p.Mitra.Nama }</div>
+      <div><strong>Uang sejumlah:</strong> <span class="font-bold">{ format.Rupiah(p.Penjualan.Total) }</span></div>
+      <div><strong>Terbilang:</strong> <em>{ terbilang.Konversi(p.Penjualan.Total / 100) }</em></div>
+      <div><strong>Untuk pembayaran:</strong> Pembelian barang</div>
+    </div>
+
+    <table class="relative w-full text-xs border-collapse mb-3">
+      <thead>
+        <tr class="bg-slate-100">
+          <th class="border px-2 py-1 text-left">No</th>
+          <th class="border px-2 py-1 text-left">Produk</th>
+          <th class="border px-2 py-1 text-right">Qty</th>
+          <th class="border px-2 py-1 text-left">Sat</th>
+          <th class="border px-2 py-1 text-right">Harga</th>
+          <th class="border px-2 py-1 text-right">Subtotal</th>
+        </tr>
+      </thead>
+      <tbody>
+        for i, it := range p.Penjualan.Items {
+          <tr>
+            <td class="border px-2 py-1">{ fmt.Sprintf("%d", i+1) }</td>
+            <td class="border px-2 py-1">{ it.ProdukNama }</td>
+            <td class="border px-2 py-1 text-right">{ fmt.Sprintf("%g", it.Qty) }</td>
+            <td class="border px-2 py-1">{ it.SatuanKode }</td>
+            <td class="border px-2 py-1 text-right">{ format.Rupiah(it.HargaSatuan) }</td>
+            <td class="border px-2 py-1 text-right">{ format.Rupiah(it.Subtotal) }</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+
+    <div class="relative text-sm flex justify-end mb-4">
+      <table class="w-1/2">
+        <tr><td class="text-right pr-3">Subtotal:</td><td class="text-right">{ format.Rupiah(p.Penjualan.Subtotal) }</td></tr>
+        <tr><td class="text-right pr-3">Diskon:</td><td class="text-right">{ format.Rupiah(p.Penjualan.Diskon) }</td></tr>
+        <tr class="font-bold text-base"><td class="text-right pr-3 border-t">TOTAL:</td>
+            <td class="text-right border-t">{ format.Rupiah(p.Penjualan.Total) }</td></tr>
+      </table>
+    </div>
+
+    <div class="relative flex justify-end mt-8 text-sm">
+      <div class="text-center">
+        <p>{ p.Gudang.Nama }, { p.Penjualan.Tanggal.Format("02 Jan 2006") }</p>
+        <p class="mt-1">Penerima,</p>
+        <div class="h-16"></div>
+        <p>(_______________________)</p>
+      </div>
+    </div>
+  </div>
+}

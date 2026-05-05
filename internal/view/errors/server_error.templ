@@ -1,0 +1,36 @@
+package errors
+
+import (
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// ServerError - halaman 500.
+templ ServerError(message string) {
+  @layout.AuthLayout(layout.AuthLayoutProps{ Title: "Kesalahan Server" }) {
+    <div class="text-center">
+      <div class="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 mb-6">
+        @icon.AlertTriangle(40, "")
+      </div>
+      <p class="text-7xl font-bold text-slate-900 tracking-tight">500</p>
+      <h1 class="mt-2 text-lg font-semibold text-slate-900">Terjadi Kesalahan</h1>
+      <p class="mt-2 text-sm text-slate-500 max-w-sm mx-auto">
+        if message != "" {
+          { message }
+        } else {
+          Server mengalami kendala internal. Coba muat ulang halaman atau hubungi admin jika berlanjut.
+        }
+      </p>
+      <div class="mt-6 flex items-center justify-center gap-2">
+        <a href="/" class="btn-primary btn-md inline-flex items-center gap-2">
+          @icon.Home(16, "")
+          <span>Kembali ke Beranda</span>
+        </a>
+        <button onclick="location.reload()" class="btn-secondary btn-md inline-flex items-center gap-2">
+          @icon.Loader(16, "")
+          <span>Muat Ulang</span>
+        </button>
+      </div>
+    </div>
+  }
+}

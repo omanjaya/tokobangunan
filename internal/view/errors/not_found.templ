@@ -1,0 +1,33 @@
+package errors
+
+import (
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// NotFound - halaman 404. Pakai AuthLayout supaya bisa tampil ke user yang
+// belum login juga.
+templ NotFound(message string) {
+  @layout.AuthLayout(layout.AuthLayoutProps{ Title: "Halaman Tidak Ditemukan" }) {
+    <div class="text-center">
+      <div class="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 mb-6">
+        @icon.Inbox(40, "")
+      </div>
+      <p class="text-7xl font-bold text-slate-900 tracking-tight">404</p>
+      <h1 class="mt-2 text-lg font-semibold text-slate-900">Halaman Tidak Ditemukan</h1>
+      <p class="mt-2 text-sm text-slate-500 max-w-sm mx-auto">
+        if message != "" && message != "Not Found" {
+          { message }
+        } else {
+          Halaman yang Anda cari tidak ada atau sudah dipindahkan.
+        }
+      </p>
+      <div class="mt-6 flex items-center justify-center gap-2">
+        <a href="/" class="btn-primary btn-md inline-flex items-center gap-2">
+          @icon.Home(16, "")
+          <span>Kembali ke Beranda</span>
+        </a>
+      </div>
+    </div>
+  }
+}

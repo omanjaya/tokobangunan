@@ -1,0 +1,36 @@
+package mitra
+
+import (
+  "fmt"
+
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+)
+
+// SearchResults adalah partial untuk autocomplete /mitra/search.
+// Dikembalikan sebagai HTML fragment untuk HTMX swap.
+templ SearchResults(p SearchResultsProps) {
+  if len(p.Items) == 0 {
+    <div class="p-3 text-sm text-slate-500">
+      if p.Query == "" {
+        Ketik untuk mencari mitra.
+      } else {
+        Tidak ada mitra yang cocok dengan "{ p.Query }".
+      }
+    </div>
+  } else {
+    <ul class="divide-y divide-slate-100" role="listbox">
+      for _, m := range p.Items {
+        <li>
+          <a href={ templ.SafeURL(fmt.Sprintf("/mitra/%d", m.ID)) }
+             class="flex items-center justify-between gap-3 px-3 py-2 hover:bg-slate-50">
+            <div class="min-w-0">
+              <div class="text-sm font-medium text-slate-900 truncate" title={ m.Nama }>{ m.Nama }</div>
+              <div class="text-xs text-slate-500 font-mono">{ m.Kode }</div>
+            </div>
+            @components.Badge(TipeLabel(m.Tipe), TipeBadgeVariant(m.Tipe))
+          </a>
+        </li>
+      }
+    </ul>
+  }
+}

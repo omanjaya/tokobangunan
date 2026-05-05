@@ -1,0 +1,246 @@
+package produk
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// fotoURL aman ambil dari pointer.
+func fotoURL(p FormProps) string {
+  if p.FotoURL != nil {
+    return *p.FotoURL
+  }
+  return ""
+}
+
+templ Form(p FormProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: formTitle(p.IsEdit),
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Master Data" },
+      { Label: "Produk", Href: "/produk" },
+      { Label: formTitle(p.IsEdit) },
+    },
+  }) {
+    @components.PageHeader(formTitle(p.IsEdit), "Lengkapi data produk dengan SKU dan satuan yang konsisten.")
+    @FormCard(p)
+  }
+}
+
+// FormCard - bagian inti form (dipakai untuk swap setelah error).
+templ FormCard(p FormProps) {
+  <form
+    id="produk-form"
+    method="post"
+    action={ templ.SafeURL(formAction(p)) }
+    hx-post={ formAction(p) }
+    hx-target="#produk-form"
+    hx-swap="outerHTML"
+    class="space-y-4"
+  >
+    if p.General != "" {
+      @components.Alert(components.AlertProps{ Variant: "danger", Message: p.General })
+    }
+    if p.IsEdit && p.Input.Version > 0 {
+      <input type="hidden" name="version" value={ strconv.FormatInt(p.Input.Version, 10) }/>
+    }
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      @components.Card(components.CardProps{ Title: "Informasi Dasar" }) {
+        <div class="space-y-4">
+          @components.FormField(components.FormFieldProps{
+            ID: "sku", Label: "SKU", Required: true,
+            Helper: "Kode unik internal (mis. SMN-50, BSI-10).",
+            Error: p.Errors["sku"],
+          }) {
+            @components.Input(components.InputProps{
+              ID: "sku", Name: "sku", Type: "text",
+              Value: p.Input.SKU, Placeholder: "Contoh: SMN-50",
+              Required: true, HasError: p.Errors["sku"] != "",
+            })
+          }
+          @components.FormField(components.FormFieldProps{
+            ID: "nama", Label: "Nama Produk", Required: true,
+            Error: p.Errors["nama"],
+          }) {
+            @components.Input(components.InputProps{
+              ID: "nama", Name: "nama", Type: "text",
+              Value: p.Input.Nama, Placeholder: "Contoh: Semen Tiga Roda 50kg",
+              Required: true, HasError: p.Errors["nama"] != "",
+            })
+          }
+          @components.FormField(components.FormFieldProps{
+            ID: "kategori", Label: "Kategori",
+            Helper: "Opsional. Mis. Semen, Besi, Pipa, Cat.",
+            Error: p.Errors["kategori"],
+          }) {
+            @components.Input(components.InputProps{
+              ID: "kategori", Name: "kategori", Type: "text",
+              Value: p.Input.Kategori, Placeholder: "Mis. Semen",
+              HasError: p.Errors["kategori"] != "",
+            })
+          }
+          <label class="inline-flex items-center gap-2 text-sm text-slate-700 mt-2">
+            if p.Input.IsActive {
+              <input type="checkbox" name="is_active" value="true" checked
+                     class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+            } else {
+              <input type="checkbox" name="is_active" value="true"
+                     class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+            }
+            <span>Produk aktif</span>
+          </label>
+        </div>
+      }
+
+      @components.Card(components.CardProps{ Title: "Satuan & Konversi" }) {
+        <div class="space-y-4">
+          @components.FormField(components.FormFieldProps{
+            ID: "satuan_kecil_id", Label: "Satuan Kecil", Required: true,
+            Helper: "Satuan dasar untuk pencatatan stok.",
+            Error: p.Errors["satuankecilid"],
+          }) {
+            @satuanSelect("satuan_kecil_id", p.Input.SatuanKecilID, p.Satuans, false)
+          }
+          @components.FormField(components.FormFieldProps{
+            ID: "satuan_besar_id", Label: "Satuan Besar",
+            Helper: "Opsional. Mis. dus, sak, lusin.",
+            Error: p.Errors["satuanbesarid"],
+          }) {
+            @satuanSelect("satuan_besar_id", p.Input.SatuanBesarID, p.Satuans, true)
+          }
+          @components.FormField(components.FormFieldProps{
+            ID: "faktor_konversi", Label: "Faktor Konversi", Required: true,
+            Helper: "1 satuan besar = N satuan kecil. Default 1.",
+            Error: p.Errors["faktorkonversi"],
+          }) {
+            @components.Input(components.InputProps{
+              ID: "faktor_konversi", Name: "faktor_konversi", Type: "number",
+              Value: floatStr(p.Input.FaktorKonversi),
+              Required: true, HasError: p.Errors["faktorkonversi"] != "",
+              Attrs: templ.Attributes{ "step": "0.0001", "min": "0" },
+            })
+          }
+          @components.FormField(components.FormFieldProps{
+            ID: "stok_minimum", Label: "Stok Minimum",
+            Helper: "Notifikasi stok kritis bila di bawah angka ini.",
+            Error: p.Errors["stokminimum"],
+          }) {
+            @components.Input(components.InputProps{
+              ID: "stok_minimum", Name: "stok_minimum", Type: "number",
+              Value: floatStr(p.Input.StokMinimum),
+              HasError: p.Errors["stokminimum"] != "",
+              Attrs: templ.Attributes{ "step": "0.0001", "min": "0" },
+            })
+          }
+        </div>
+      }
+    </div>
+
+    if p.IsEdit {
+      @FotoSection(p)
+    }
+
+    <div class="flex items-center justify-end gap-2 pt-2">
+      @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: "/produk" }) {
+        <span>Batal</span>
+      }
+      @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+        @icon.Check(16, "")
+        <span>Simpan</span>
+      }
+    </div>
+  </form>
+}
+
+// FotoSection - upload foto produk (hanya muncul saat edit, butuh ID).
+templ FotoSection(p FormProps) {
+  @components.Card(components.CardProps{ Title: "Foto Produk" }) {
+    <div class="flex flex-col md:flex-row gap-4 items-start">
+      <div class="w-full md:w-48 h-48 rounded-lg border border-dashed border-slate-300 bg-slate-50 overflow-hidden flex items-center justify-center">
+        if fotoURL(p) != "" {
+          <img src={ fotoURL(p) } alt="Foto produk" class="w-full h-full object-cover"/>
+        } else {
+          <div class="text-center text-slate-500 text-xs px-2">
+            @icon.Package(32, "mx-auto mb-1")
+            <div>Belum ada foto</div>
+          </div>
+        }
+      </div>
+      <div class="flex-1 space-y-3">
+        <p class="text-sm text-slate-600">
+          Format: JPG, PNG, atau WEBP. Maks 2 MB. Di mobile, tombol upload langsung membuka kamera.
+        </p>
+        <form
+          method="post"
+          action={ templ.SafeURL(fmt.Sprintf("/produk/%d/foto", p.ID)) }
+          enctype="multipart/form-data"
+          class="flex flex-wrap items-center gap-2"
+        >
+          <input type="file" name="foto" accept="image/jpeg,image/png,image/webp" capture="environment" required
+                 class="block text-sm text-slate-600 file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-brand-50 file:text-brand-700 file:text-sm file:font-medium hover:file:bg-brand-100"/>
+          <button type="submit" class="btn-primary btn-md">
+            @icon.Render("upload", 16, "")
+            <span>Unggah</span>
+          </button>
+        </form>
+        if fotoURL(p) != "" {
+          <form
+            method="post"
+            action={ templ.SafeURL(fmt.Sprintf("/produk/%d/foto/delete", p.ID)) }
+            onsubmit="return confirm('Hapus foto produk?');"
+          >
+            <button type="submit" class="btn-secondary btn-sm text-rose-600">
+              @icon.Trash(14, "")
+              <span>Hapus foto</span>
+            </button>
+          </form>
+        }
+      </div>
+    </div>
+  }
+}
+
+templ satuanSelect(name string, current int64, opts []SatuanLite, includeEmpty bool) {
+  <select id={ name } name={ name } class="input">
+    if includeEmpty {
+      <option value="0">— Tidak ada —</option>
+    } else {
+      <option value="0">— Pilih satuan —</option>
+    }
+    for _, s := range opts {
+      if s.ID == current {
+        <option value={ strconv.FormatInt(s.ID, 10) } selected>
+          { fmt.Sprintf("%s — %s", s.Kode, s.Nama) }
+        </option>
+      } else {
+        <option value={ strconv.FormatInt(s.ID, 10) }>
+          { fmt.Sprintf("%s — %s", s.Kode, s.Nama) }
+        </option>
+      }
+    }
+  </select>
+}
+
+func formTitle(isEdit bool) string {
+  if isEdit {
+    return "Edit Produk"
+  }
+  return "Tambah Produk"
+}
+
+func formAction(p FormProps) string {
+  if p.IsEdit {
+    return fmt.Sprintf("/produk/%d", p.ID)
+  }
+  return "/produk"
+}
+
+func floatStr(v float64) string {
+  return strconv.FormatFloat(v, 'f', -1, 64)
+}

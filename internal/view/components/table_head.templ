@@ -1,0 +1,25 @@
+package components
+
+// TableCol mendeskripsikan satu kolom <th> dalam <thead>.
+type TableCol struct {
+  Label string
+  Class string
+}
+
+func tableColClass(c string) string {
+  if c == "" {
+    return "px-3 py-2 text-left"
+  }
+  return c
+}
+
+// TableHead renders <thead class="thead-default"> dengan kolom dari slice.
+templ TableHead(cols []TableCol) {
+  <thead class="thead-default">
+    <tr>
+      for _, c := range cols {
+        <th class={ tableColClass(c.Class) }>{ c.Label }</th>
+      }
+    </tr>
+  </thead>
+}

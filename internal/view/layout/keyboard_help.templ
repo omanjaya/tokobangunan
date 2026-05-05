@@ -1,0 +1,89 @@
+package layout
+
+import "github.com/omanjaya/tokobangunan/internal/view/icon"
+
+templ KeyboardHelp() {
+	<div
+		x-data="{ open: false }"
+		@keydown.window.shift.slash.prevent="open = true"
+		@keydown.window.escape.prevent="open = false"
+	>
+		<button
+			type="button"
+			@click="open = true"
+			class="hidden md:inline-flex fixed bottom-6 right-6 z-30 h-10 w-10 items-center justify-center rounded-full bg-white shadow-md border border-slate-200 text-slate-600 hover:text-slate-900 hover:shadow-lg transition"
+			aria-label="Bantuan keyboard shortcut"
+			title="Tekan ? untuk bantuan"
+		>
+			@icon.Info(20, "")
+		</button>
+		<div
+			x-show="open"
+			x-cloak
+			x-transition.opacity
+			class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4"
+			@click.self="open = false"
+		>
+			<div
+				x-show="open"
+				x-transition
+				class="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+				@click.stop
+			>
+				<div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+					<h2 class="text-lg font-semibold tracking-tight">Keyboard Shortcut</h2>
+					<button @click="open = false" class="text-slate-400 hover:text-slate-700" aria-label="Tutup">
+						@icon.X(20, "")
+					</button>
+				</div>
+				<div class="px-6 py-5 space-y-6">
+					@kbdSection("Global", []kbdRow{
+						{Keys: []string{"?"}, Label: "Buka bantuan ini"},
+						{Keys: []string{"Esc"}, Label: "Tutup modal"},
+						{Keys: []string{"/"}, Label: "Fokus ke pencarian"},
+					})
+					@kbdSection("Form Penjualan", []kbdRow{
+						{Keys: []string{"F2"}, Label: "Simpan transaksi"},
+						{Keys: []string{"F3"}, Label: "Tambah baris item"},
+						{Keys: []string{"F4"}, Label: "Set status lunas (tunai)"},
+						{Keys: []string{"F8"}, Label: "Cetak preview kwitansi"},
+						{Keys: []string{"F9"}, Label: "Hapus baris terpilih"},
+					})
+					@kbdSection("Daftar / Tabel", []kbdRow{
+						{Keys: []string{"↑", "↓"}, Label: "Navigasi baris"},
+						{Keys: []string{"Enter"}, Label: "Buka detail"},
+						{Keys: []string{"Ctrl", "F"}, Label: "Pencarian inline"},
+					})
+					@kbdSection("Form Umum", []kbdRow{
+						{Keys: []string{"Ctrl", "S"}, Label: "Simpan"},
+						{Keys: []string{"Esc"}, Label: "Batal"},
+						{Keys: []string{"Tab"}, Label: "Field berikutnya"},
+					})
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+type kbdRow struct {
+	Keys  []string
+	Label string
+}
+
+templ kbdSection(title string, rows []kbdRow) {
+	<div>
+		<h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">{ title }</h3>
+		<div class="space-y-2">
+			for _, r := range rows {
+				<div class="flex items-center justify-between text-sm">
+					<span class="text-slate-700">{ r.Label }</span>
+					<span class="flex items-center gap-1">
+						for _, k := range r.Keys {
+							<kbd class="px-2 py-1 text-xs font-mono font-medium bg-slate-100 border border-slate-300 rounded text-slate-700 shadow-sm">{ k }</kbd>
+						}
+					</span>
+				</div>
+			}
+		</div>
+	</div>
+}

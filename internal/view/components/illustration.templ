@@ -1,0 +1,62 @@
+package components
+
+// Illustration adalah SVG monochrome (currentColor) ukuran adjustable via
+// class. ViewBox 200x200, geometri sederhana. Tidak memakai emoji atau warna
+// hardcoded — warna mengikuti parent (text-slate-300, dst).
+
+templ IllustrationEmpty(class string) {
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none"
+    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+    class={ class } aria-hidden="true">
+    <path d="M40 90 L100 60 L160 90 L100 120 Z" stroke-dasharray="2 6"/>
+    <path d="M40 90 L40 140 L100 170 L160 140 L160 90"/>
+    <path d="M100 120 L100 170"/>
+    <circle cx="100" cy="50" r="3" fill="currentColor"/>
+    <circle cx="70" cy="40" r="2" fill="currentColor"/>
+    <circle cx="130" cy="40" r="2" fill="currentColor"/>
+  </svg>
+}
+
+templ IllustrationError(class string) {
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none"
+    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+    class={ class } aria-hidden="true">
+    <circle cx="100" cy="100" r="70"/>
+    <path d="M100 60 L100 110"/>
+    <circle cx="100" cy="135" r="3" fill="currentColor" stroke="none"/>
+  </svg>
+}
+
+templ IllustrationOffline(class string) {
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none"
+    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+    class={ class } aria-hidden="true">
+    <path d="M55 130 a30 30 0 0 1 0 -60 a35 35 0 0 1 70 -10 a25 25 0 0 1 25 70 Z"/>
+    <path d="M50 50 L160 160" stroke-width="3"/>
+  </svg>
+}
+
+templ IllustrationSuccess(class string) {
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none"
+    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+    class={ class } aria-hidden="true">
+    <circle cx="100" cy="100" r="70"/>
+    <path d="M70 100 L92 122 L135 80"/>
+  </svg>
+}
+
+// IllustrationRender adalah dispatcher dynamic by name.
+templ IllustrationRender(name, class string) {
+  switch name {
+    case "error":
+      @IllustrationError(class)
+    case "offline":
+      @IllustrationOffline(class)
+    case "success":
+      @IllustrationSuccess(class)
+    case "empty":
+      @IllustrationEmpty(class)
+    default:
+      @IllustrationEmpty(class)
+  }
+}

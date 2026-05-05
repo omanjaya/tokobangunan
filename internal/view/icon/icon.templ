@@ -1,0 +1,61 @@
+package icon
+
+// Render adalah dispatcher utama. Pakai bila nama icon datang dari data
+// (misal config nav). Bila statis, pakai helper bernama (Home, Search, dst)
+// agar typo ketahuan saat compile.
+templ Render(name string, size int, class string) {
+  @templ.Raw(SvgFor(name, size, class))
+}
+
+// ---------- Navigation -------------------------------------------------------
+
+templ Home(size int, class string)         { @templ.Raw(SvgFor("home", size, class)) }
+templ ShoppingCart(size int, class string) { @templ.Raw(SvgFor("shopping-cart", size, class)) }
+templ Package(size int, class string)      { @templ.Raw(SvgFor("package", size, class)) }
+templ Truck(size int, class string)        { @templ.Raw(SvgFor("truck", size, class)) }
+templ Users(size int, class string)        { @templ.Raw(SvgFor("users", size, class)) }
+templ Briefcase(size int, class string)    { @templ.Raw(SvgFor("briefcase", size, class)) }
+templ BarChart(size int, class string)     { @templ.Raw(SvgFor("bar-chart-3", size, class)) }
+templ Settings(size int, class string)     { @templ.Raw(SvgFor("settings", size, class)) }
+templ LogOut(size int, class string)       { @templ.Raw(SvgFor("log-out", size, class)) }
+
+// ---------- Actions ----------------------------------------------------------
+
+templ Plus(size int, class string)            { @templ.Raw(SvgFor("plus", size, class)) }
+templ Pencil(size int, class string)          { @templ.Raw(SvgFor("pencil", size, class)) }
+templ Trash(size int, class string)           { @templ.Raw(SvgFor("trash-2", size, class)) }
+templ Check(size int, class string)           { @templ.Raw(SvgFor("check", size, class)) }
+templ X(size int, class string)               { @templ.Raw(SvgFor("x", size, class)) }
+templ Download(size int, class string)        { @templ.Raw(SvgFor("download", size, class)) }
+templ Upload(size int, class string)          { @templ.Raw(SvgFor("upload", size, class)) }
+templ Printer(size int, class string)         { @templ.Raw(SvgFor("printer", size, class)) }
+templ Search(size int, class string)          { @templ.Raw(SvgFor("search", size, class)) }
+templ Filter(size int, class string)          { @templ.Raw(SvgFor("filter", size, class)) }
+templ MoreHorizontal(size int, class string)  { @templ.Raw(SvgFor("more-horizontal", size, class)) }
+
+// ---------- Status -----------------------------------------------------------
+
+templ CheckCircle(size int, class string)   { @templ.Raw(SvgFor("check-circle-2", size, class)) }
+templ XCircle(size int, class string)       { @templ.Raw(SvgFor("x-circle", size, class)) }
+templ AlertTriangle(size int, class string) { @templ.Raw(SvgFor("alert-triangle", size, class)) }
+templ Info(size int, class string)          { @templ.Raw(SvgFor("info", size, class)) }
+templ Clock(size int, class string)         { @templ.Raw(SvgFor("clock", size, class)) }
+
+// ---------- UI ---------------------------------------------------------------
+
+templ ChevronDown(size int, class string)  { @templ.Raw(SvgFor("chevron-down", size, class)) }
+templ ChevronUp(size int, class string)    { @templ.Raw(SvgFor("chevron-up", size, class)) }
+templ ChevronLeft(size int, class string)  { @templ.Raw(SvgFor("chevron-left", size, class)) }
+templ ChevronRight(size int, class string) { @templ.Raw(SvgFor("chevron-right", size, class)) }
+templ ArrowUp(size int, class string)      { @templ.Raw(SvgFor("arrow-up", size, class)) }
+templ ArrowDown(size int, class string)    { @templ.Raw(SvgFor("arrow-down", size, class)) }
+templ Menu(size int, class string)         { @templ.Raw(SvgFor("menu", size, class)) }
+
+// ---------- Feedback ---------------------------------------------------------
+
+templ Inbox(size int, class string)   { @templ.Raw(SvgFor("inbox", size, class)) }
+templ Loader(size int, class string)  { @templ.Raw(SvgFor("loader-2", size, class)) }
+templ Eye(size int, class string)     { @templ.Raw(SvgFor("eye", size, class)) }
+templ EyeOff(size int, class string)  { @templ.Raw(SvgFor("eye-off", size, class)) }
+templ Lock(size int, class string)    { @templ.Raw(SvgFor("lock", size, class)) }
+templ Bell(size int, class string)    { @templ.Raw(SvgFor("bell", size, class)) }

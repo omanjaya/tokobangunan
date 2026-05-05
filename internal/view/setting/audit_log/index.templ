@@ -1,0 +1,110 @@
+package auditview
+
+import (
+	"strconv"
+
+	"github.com/omanjaya/tokobangunan/internal/domain"
+	"github.com/omanjaya/tokobangunan/internal/service"
+	"github.com/omanjaya/tokobangunan/internal/view/components"
+	"github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+type IndexProps struct {
+	Nav    layout.NavData
+	User   layout.UserData
+	Result service.PageResult[domain.AuditLog]
+	Tabels []string
+	Filter FilterValues
+}
+
+templ Index(p IndexProps) {
+	@layout.AppShell(layout.AppShellProps{
+		Title: "Audit Log",
+		Nav:   p.Nav,
+		User:  p.User,
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Label: "Setting", Href: "/setting"},
+			{Label: "Audit Log"},
+		},
+	}) {
+		@components.PageHeader("Audit Log", "Riwayat perubahan data sistem.") {
+		}
+
+		<form method="get" action="/setting/audit-log" class="card p-4 mb-4">
+			<div class="grid grid-cols-1 md:grid-cols-6 gap-3">
+				<select name="tabel" class="input">
+					<option value="">Semua tabel</option>
+					for _, t := range p.Tabels {
+						if t == p.Filter.Tabel {
+							<option value={ t } selected>{ t }</option>
+						} else {
+							<option value={ t }>{ t }</option>
+						}
+					}
+				</select>
+				<select name="aksi" class="input">
+					<option value="">Semua aksi</option>
+					@option("CREATE", p.Filter.Aksi)
+					@option("UPDATE", p.Filter.Aksi)
+					@option("DELETE", p.Filter.Aksi)
+				</select>
+				<input type="text" name="user_id" placeholder="User ID" value={ p.Filter.UserID } class="input"/>
+				<input type="text" name="record_id" placeholder="Record ID" value={ p.Filter.RecordID } class="input"/>
+				<input type="date" name="from" value={ p.Filter.From } class="input"/>
+				<input type="date" name="to" value={ p.Filter.To } class="input"/>
+			</div>
+			<div class="mt-3 flex justify-end gap-2">
+				<a href="/setting/audit-log" class="btn-ghost btn-md">Reset</a>
+				<button type="submit" class="btn-primary btn-md">Filter</button>
+			</div>
+		</form>
+
+		if len(p.Result.Items) == 0 {
+			@components.EmptyState(components.EmptyStateProps{
+				IconName:    "inbox",
+				Title:       "Tidak ada audit log",
+				Description: "Belum ada aktivitas yang tercatat untuk filter ini.",
+			})
+		} else {
+			<div class="card overflow-hidden">
+				<table class="w-full text-sm">
+					<thead class="sticky top-0 z-10 bg-slate-50 text-slate-500 text-xs uppercase tracking-wider shadow-sm">
+						<tr>
+							<th class="text-left px-4 py-3">Waktu</th>
+							<th class="text-left px-4 py-3">User</th>
+							<th class="text-left px-4 py-3">Aksi</th>
+							<th class="text-left px-4 py-3">Tabel</th>
+							<th class="text-left px-4 py-3">Record ID</th>
+							<th class="text-right px-4 py-3"></th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-slate-100">
+						for _, l := range p.Result.Items {
+							<tr class="hover:bg-slate-50">
+								<td class="px-4 py-3 tabular-nums text-slate-600">{ l.CreatedAt.Format("02 Jan 2006 15:04") }</td>
+								<td class="px-4 py-3">{ l.UserNama } <span class="text-slate-500">({ l.UserUsername })</span></td>
+								<td class="px-4 py-3">
+									@components.Badge(l.Aksi, AksiBadgeVariant(l.Aksi))
+								</td>
+								<td class="px-4 py-3 font-mono text-slate-700">{ l.Tabel }</td>
+								<td class="px-4 py-3 font-mono text-slate-700">{ strconv.FormatInt(l.RecordID, 10) }</td>
+								<td class="px-4 py-3 text-right">
+									<a href={ templ.URL("/setting/audit-log/" + strconv.FormatInt(l.ID, 10)) } class="text-brand-700 hover:text-brand-800 text-xs font-medium">Detail</a>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		}
+	}
+}
+
+templ option(value, selected string) {
+	if value == selected {
+		<option value={ value } selected>{ value }</option>
+	} else {
+		<option value={ value }>{ value }</option>
+	}
+}
+

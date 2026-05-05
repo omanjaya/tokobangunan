@@ -1,0 +1,181 @@
+package laporan
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Penjualan(p PenjualanProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Laporan Penjualan",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Laporan", Href: "/laporan" },
+      { Label: "Penjualan" },
+    },
+  }) {
+    @components.PageHeader("Laporan Penjualan", "Daftar transaksi penjualan periode tertentu.") {
+      <div class="relative inline-block" x-data="{ open: false }" @click.outside="open = false">
+        <button type="button" @click="open = !open" class="btn-secondary btn-md">
+          @icon.Download(14, "")
+          <span>Ekspor</span>
+          @icon.ChevronDown(14, "")
+        </button>
+        <div x-show="open" x-cloak x-transition.opacity
+             class="absolute right-0 mt-2 w-44 bg-white border border-slate-200 rounded-lg shadow-lg z-20">
+          <a href={ templ.SafeURL(penjualanExportURL(p, "csv")) }
+             class="block px-3 py-2 text-sm hover:bg-brand-50">CSV (.csv)</a>
+          <a href={ templ.SafeURL(penjualanExportURL(p, "xlsx")) }
+             class="block px-3 py-2 text-sm hover:bg-brand-50">Excel (.xlsx)</a>
+          <a href={ templ.SafeURL(penjualanExportURL(p, "pdf")) } target="_blank"
+             class="block px-3 py-2 text-sm hover:bg-brand-50">PDF (.pdf)</a>
+        </div>
+      </div>
+    }
+
+    @presetChips("/laporan/penjualan")
+    @penjualanFilter(p)
+
+    @components.Card(components.CardProps{ NoPad: true }) {
+      if len(p.Rows) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "shopping-cart",
+          Title: "Tidak ada penjualan",
+          Description: "Tidak ada transaksi pada rentang tanggal & filter ini.",
+        })
+      } else {
+        @penjualanTable(p)
+        @penjualanPagination(p)
+      }
+    }
+  }
+}
+
+templ penjualanFilter(p PenjualanProps) {
+  @components.MobileFilter() {
+  <form method="get" action="/laporan/penjualan" class="flex flex-wrap items-end gap-3 mb-4">
+    <div>
+      <div class="text-xs font-medium text-slate-700 mb-1">Periode</div>
+      @components.DateRange(components.DateRangeProps{
+        From: p.From, To: p.To,
+        NameFrom: "from", NameTo: "to",
+      })
+    </div>
+    <div class="w-56">
+      @components.FormField(components.FormFieldProps{ ID: "gudang_id", Label: "Gudang" }) {
+        <select id="gudang_id" name="gudang_id" class="input">
+          <option value="0">Semua gudang</option>
+          for _, g := range p.Gudangs {
+            if g.ID == p.GudangID {
+              <option value={ strconv.FormatInt(g.ID, 10) } selected>{ g.Kode } — { g.Nama }</option>
+            } else {
+              <option value={ strconv.FormatInt(g.ID, 10) }>{ g.Kode } — { g.Nama }</option>
+            }
+          }
+        </select>
+      }
+    </div>
+    if p.MitraID > 0 {
+      <input type="hidden" name="mitra_id" value={ strconv.FormatInt(p.MitraID, 10) }/>
+    }
+    <button type="submit" class="btn-secondary btn-md">
+      @icon.Filter(14, "")
+      <span>Terapkan</span>
+    </button>
+    @components.HxIndicator()
+  </form>
+  }
+}
+
+templ penjualanTable(p PenjualanProps) {
+  <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-sm">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Tanggal</th>
+          <th class="px-4 py-3 text-left font-medium">Nomor</th>
+          <th class="px-4 py-3 text-left font-medium">Gudang</th>
+          <th class="px-4 py-3 text-left font-medium">Mitra</th>
+          <th class="px-4 py-3 text-right font-medium">Total</th>
+          <th class="px-4 py-3 text-left font-medium">Status</th>
+          <th class="px-4 py-3 text-right font-medium">Aksi</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 bg-white">
+        for _, r := range p.Rows {
+          <tr>
+            <td class="px-4 py-3">{ r.Tanggal.Format("02 Jan 2006") }</td>
+            <td class="px-4 py-3 font-mono">{ r.NomorKwitansi }</td>
+            <td class="px-4 py-3">{ r.GudangNama }</td>
+            <td class="px-4 py-3">{ r.MitraNama }</td>
+            <td class="px-4 py-3 text-right tabular-nums whitespace-nowrap num">{ format.Rupiah(r.Total) }</td>
+            <td class="px-4 py-3">
+              @components.Badge(r.StatusBayar, statusVariant(r.StatusBayar))
+            </td>
+            <td class="px-4 py-3 text-right">
+              <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d", r.PenjualanID)) }
+                 class="text-brand-600 hover:underline text-sm">Detail</a>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+templ penjualanPagination(p PenjualanProps) {
+  <div class="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm text-slate-600">
+    <div>{ fmt.Sprintf("Total %d transaksi · halaman %d dari %d", p.Total, p.Page, p.TotalPages) }</div>
+    <div class="flex items-center gap-2">
+      if p.Page > 1 {
+        @components.Button(components.ButtonProps{ Variant: "secondary", Size: "sm",
+          Href: penjualanPageURL(p, p.Page-1) }) {
+          @icon.ChevronLeft(14, "")
+          <span>Sebelumnya</span>
+        }
+      }
+      if p.Page < p.TotalPages {
+        @components.Button(components.ButtonProps{ Variant: "secondary", Size: "sm",
+          Href: penjualanPageURL(p, p.Page+1) }) {
+          <span>Berikutnya</span>
+          @icon.ChevronRight(14, "")
+        }
+      }
+    </div>
+  </div>
+}
+
+func statusVariant(status string) string {
+  switch status {
+  case "lunas":
+    return "success"
+  case "kredit":
+    return "warning"
+  case "sebagian":
+    return "info"
+  default:
+    return "default"
+  }
+}
+
+func penjualanPageURL(p PenjualanProps, page int) string {
+  u := "/laporan/penjualan?page=" + strconv.Itoa(page)
+  if p.From != "" { u += "&from=" + p.From }
+  if p.To != "" { u += "&to=" + p.To }
+  if p.GudangID > 0 { u += "&gudang_id=" + strconv.FormatInt(p.GudangID, 10) }
+  if p.MitraID > 0 { u += "&mitra_id=" + strconv.FormatInt(p.MitraID, 10) }
+  return u
+}
+
+func penjualanExportURL(p PenjualanProps, fmtName string) string {
+  u := "/laporan/penjualan/export." + fmtName + "?from=" + p.From + "&to=" + p.To
+  if p.GudangID > 0 { u += "&gudang_id=" + strconv.FormatInt(p.GudangID, 10) }
+  if p.MitraID > 0 { u += "&mitra_id=" + strconv.FormatInt(p.MitraID, 10) }
+  return u
+}

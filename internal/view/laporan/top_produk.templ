@@ -1,0 +1,80 @@
+package laporan
+
+import (
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ TopProduk(p TopProdukProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Top Produk",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Laporan", Href: "/laporan" },
+      { Label: "Top Produk" },
+    },
+  }) {
+    @components.PageHeader("Top Produk", "Produk terlaris berdasarkan omset periode.") {
+      @exportButtons("/laporan/top-produk/export", topProdukExportQuery(p))
+    }
+
+    @presetChips("/laporan/top-produk")
+    @components.MobileFilter() {
+    <form method="get" action="/laporan/top-produk" class="flex flex-wrap items-end gap-3 mb-4">
+      <div class="w-44">
+        @components.FormField(components.FormFieldProps{ ID: "from", Label: "Dari" }) {
+          @components.Input(components.InputProps{ ID: "from", Name: "from", Type: "date", Value: p.From })
+        }
+      </div>
+      <div class="w-44">
+        @components.FormField(components.FormFieldProps{ ID: "to", Label: "Sampai" }) {
+          @components.Input(components.InputProps{ ID: "to", Name: "to", Type: "date", Value: p.To })
+        }
+      </div>
+      <button type="submit" class="btn-secondary btn-md">
+        @icon.Filter(14, "")
+        <span>Terapkan</span>
+      </button>
+      @components.HxIndicator()
+    </form>
+    }
+
+    @components.Card(components.CardProps{ NoPad: true }) {
+      if len(p.Rows) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "package",
+          Title: "Tidak ada data",
+          Description: "Tidak ada penjualan produk pada rentang tanggal ini.",
+        })
+      } else {
+        <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+          <table class="min-w-full divide-y divide-slate-200 text-sm">
+            <thead class="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-sm">
+              <tr>
+                <th class="px-4 py-3 text-left font-medium w-12">#</th>
+                <th class="px-4 py-3 text-left font-medium">Produk</th>
+                <th class="px-4 py-3 text-right font-medium">Qty Total</th>
+                <th class="px-4 py-3 text-right font-medium">Omset</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 bg-white">
+              for i, r := range p.Rows {
+                <tr>
+                  <td class="px-4 py-3 text-slate-500">{ strconv.Itoa(i+1) }</td>
+                  <td class="px-4 py-3 font-medium">{ r.ProdukNama }</td>
+                  <td class="px-4 py-3 text-right tabular-nums font-mono">{ components.FormatNumber(r.QtyTotal) }</td>
+                  <td class="px-4 py-3 text-right tabular-nums font-mono">{ format.Rupiah(r.Total) }</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    }
+  }
+}

@@ -1,0 +1,44 @@
+# Binary
+/bin/
+/tmp/
+*.exe
+main
+
+# Go
+*.test
+*.out
+coverage.out
+coverage.html
+vendor/
+
+# Generated
+*_templ.go
+internal/db/*.go
+!internal/db/db.go
+
+# Env
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+build-errors.log
+
+# Air
+tmp/
+
+# User uploads (foto produk dll); keep .gitkeep placeholders.
+web/static/uploads/*
+!web/static/uploads/
+!web/static/uploads/**/.gitkeep
+!web/static/uploads/produk/

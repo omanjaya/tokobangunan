@@ -1,0 +1,130 @@
+// Package portal - public-facing customer portal mitra (no auth, magic link).
+package portal
+
+import (
+  "fmt"
+
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+)
+
+// Props - data tampilan portal mitra (read-only).
+type Props struct {
+  Mitra       *domain.Mitra
+  TokoNama    string
+  Token       string
+  Outstanding int64
+  Invoices    []domain.PiutangInvoice
+  Pembayaran  []domain.Pembayaran
+}
+
+templ Show(p Props) {
+  <!DOCTYPE html>
+  <html lang="id">
+    <head>
+      <meta charset="utf-8"/>
+      <meta name="viewport" content="width=device-width, initial-scale=1"/>
+      <title>Portal Mitra - { p.TokoNama }</title>
+      <link rel="stylesheet" href="/static/css/app.css"/>
+    </head>
+    <body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
+      <header class="bg-white border-b border-slate-200">
+        <div class="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div>
+            <div class="text-xs text-slate-500 uppercase">Portal Mitra</div>
+            <h1 class="text-lg font-semibold">{ p.TokoNama }</h1>
+          </div>
+          if p.Mitra != nil {
+            <div class="text-right">
+              <div class="text-sm font-medium">{ p.Mitra.Nama }</div>
+              <div class="text-xs text-slate-500">{ p.Mitra.Kode }</div>
+            </div>
+          }
+        </div>
+      </header>
+      <main class="max-w-4xl mx-auto p-4 space-y-4">
+        @components.Card(components.CardProps{ Title: "Saldo Piutang" }) {
+          <div class="kpi-value-lg text-slate-900">{ format.Rupiah(p.Outstanding) }</div>
+          <div class="text-sm text-slate-500 mt-1">
+            { fmt.Sprintf("%d invoice belum lunas", len(p.Invoices)) }
+          </div>
+        }
+
+        @components.Card(components.CardProps{ Title: "Invoice" }) {
+          if len(p.Invoices) == 0 {
+            <div class="text-sm text-slate-500">Tidak ada invoice belum lunas.</div>
+          } else {
+            <div class="overflow-x-auto -mx-6">
+              <table class="min-w-full divide-y divide-slate-200 text-sm">
+                <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+                  <tr>
+                    <th class="px-3 py-2 text-left">Tanggal</th>
+                    <th class="px-3 py-2 text-left">Nomor</th>
+                    <th class="px-3 py-2 text-right">Total</th>
+                    <th class="px-3 py-2 text-right">Dibayar</th>
+                    <th class="px-3 py-2 text-right">Outstanding</th>
+                    <th class="px-3 py-2 text-left">Jatuh Tempo</th>
+                    <th class="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  for _, inv := range p.Invoices {
+                    <tr>
+                      <td class="px-3 py-2">{ inv.Tanggal.Format("02 Jan 2006") }</td>
+                      <td class="px-3 py-2 font-medium">{ inv.NomorKwitansi }</td>
+                      <td class="px-3 py-2 text-right num">{ format.Rupiah(inv.Total) }</td>
+                      <td class="px-3 py-2 text-right text-slate-500 num">{ format.Rupiah(inv.Dibayar) }</td>
+                      <td class="px-3 py-2 text-right font-semibold num">{ format.Rupiah(inv.Outstanding) }</td>
+                      <td class="px-3 py-2">
+                        if inv.JatuhTempo != nil {
+                          { inv.JatuhTempo.Format("02 Jan 2006") }
+                        }
+                      </td>
+                      <td class="px-3 py-2">
+                        <a href={ templ.SafeURL("/portal/" + p.Token + "/penjualan/" + invIDStr(inv.PenjualanID) + "/pdf") }
+                           target="_blank"
+                           class="text-brand-600 hover:underline text-xs">PDF</a>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        }
+
+        @components.Card(components.CardProps{ Title: "Pembayaran Terakhir" }) {
+          if len(p.Pembayaran) == 0 {
+            <div class="text-sm text-slate-500">Belum ada pembayaran tercatat.</div>
+          } else {
+            <ul class="divide-y divide-slate-100">
+              for _, b := range p.Pembayaran {
+                <li class="py-2 flex items-center justify-between text-sm">
+                  <div>
+                    <div class="font-medium num">{ format.Rupiah(b.Jumlah) }</div>
+                    <div class="text-xs text-slate-500">
+                      { b.Tanggal.Format("02 Jan 2006") } &middot; { string(b.Metode) }
+                      if b.Referensi != "" {
+                        &middot; { b.Referensi }
+                      }
+                    </div>
+                  </div>
+                </li>
+              }
+            </ul>
+          }
+        }
+
+        <div class="text-xs text-slate-500 text-center pt-4">
+          Halaman ini hanya bisa diakses dengan link akses yang diberikan oleh { p.TokoNama }.
+        </div>
+      </main>
+    </body>
+  </html>
+}
+
+// invIDStr helper format int64 ke string di templ.
+func invIDStr(id int64) string {
+  return fmt.Sprintf("%d", id)
+}

@@ -1,0 +1,39 @@
+package produk
+
+import (
+  "fmt"
+
+  "github.com/omanjaya/tokobangunan/internal/domain"
+)
+
+// SearchResultsProps - dipakai oleh ProductPicker autocomplete.
+type SearchResultsProps struct {
+  Items []domain.Produk
+  Query string
+}
+
+templ SearchResults(p SearchResultsProps) {
+  if len(p.Items) == 0 {
+    <div class="px-3 py-4 text-center text-sm text-slate-500">
+      if p.Query == "" {
+        Ketik nama atau SKU untuk mencari produk.
+      } else {
+        Tidak ada produk yang cocok dengan "{ p.Query }".
+      }
+    </div>
+  } else {
+    <ul class="divide-y divide-slate-100">
+      for _, it := range p.Items {
+        <li
+          class="px-3 py-2 hover:bg-slate-50 cursor-pointer"
+          data-produk-id={ fmt.Sprintf("%d", it.ID) }
+          data-produk-sku={ it.SKU }
+          data-produk-nama={ it.Nama }
+        >
+          <div class="font-mono text-xs text-slate-500">{ it.SKU }</div>
+          <div class="text-sm font-medium text-slate-900">{ it.Nama }</div>
+        </li>
+      }
+    </ul>
+  }
+}

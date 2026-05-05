@@ -1,0 +1,43 @@
+package onboarding
+
+import "github.com/omanjaya/tokobangunan/internal/view/components"
+
+templ Step1(p Step1Props) {
+  @wizardLayout("Step 1 — Info Toko", p.Steps) {
+    @components.Card(components.CardProps{
+      Title:    "Info Toko",
+      Subtitle: "Data ini akan tampil di kop kwitansi & laporan.",
+    }) {
+      if p.Error != "" {
+        <div class="mb-4">
+          @components.Alert(components.AlertProps{Variant: "danger", Message: p.Error})
+        </div>
+      }
+      <form method="post" action="/onboarding/step1" class="space-y-4">
+        <input type="hidden" name="csrf_token" value={ p.CSRF }/>
+        @components.FormField(components.FormFieldProps{ID: "nama", Label: "Nama Toko", Required: true}) {
+          @components.Input(components.InputProps{ID: "nama", Name: "nama", Value: p.Info.Nama, Required: true})
+        }
+        @components.FormField(components.FormFieldProps{ID: "alamat", Label: "Alamat"}) {
+          <textarea id="alamat" name="alamat" rows="2" class="input">{ p.Info.Alamat }</textarea>
+        }
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          @components.FormField(components.FormFieldProps{ID: "telepon", Label: "Telepon"}) {
+            @components.Input(components.InputProps{ID: "telepon", Name: "telepon", Value: p.Info.Telepon})
+          }
+          @components.FormField(components.FormFieldProps{ID: "npwp", Label: "NPWP"}) {
+            @components.Input(components.InputProps{ID: "npwp", Name: "npwp", Value: p.Info.NPWP})
+          }
+        </div>
+        @components.FormField(components.FormFieldProps{ID: "kop_kwitansi", Label: "Kop Tambahan (opsional)", Helper: "Baris kustom di header kwitansi."}) {
+          <textarea id="kop_kwitansi" name="kop_kwitansi" rows="2" class="input">{ p.Info.KopKwitansi }</textarea>
+        }
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          @components.Button(components.ButtonProps{Variant: "primary", Type: "submit"}) {
+            <span>Lanjut</span>
+          }
+        </div>
+      </form>
+    }
+  }
+}

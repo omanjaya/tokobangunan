@@ -1,0 +1,49 @@
+package components
+
+// BulkActionBarProps - konfigurasi bulk action bar.
+// FormName: name property pada checkbox tiap row (mis. "ids").
+// DeleteURL: endpoint POST untuk batch delete (kosong = sembunyikan tombol).
+// ExportURL: endpoint GET untuk export CSV ber-filter id (kosong = sembunyikan).
+type BulkActionBarProps struct {
+  FormName  string
+  DeleteURL string
+  ExportURL string
+  ItemLabel string // label entitas (mis. "produk", "mitra")
+}
+
+// BulkActionBar - sticky action bar di bawah viewport saat ada selection.
+// Pakai Alpine.js scope `bulk` (lihat app.js -> window.bulkSelect).
+// Wrap parent table dengan `x-data="bulkSelect()"`.
+templ BulkActionBar(p BulkActionBarProps) {
+  <div
+    x-show="selected.length > 0"
+    x-transition.opacity
+    x-cloak
+    class="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 px-4 py-2.5 rounded-full bg-slate-900 text-white shadow-lg"
+  >
+    <span class="text-sm">
+      <span x-text="selected.length" class="font-semibold"></span>
+      <span>{ emptyStringFallback(p.ItemLabel, "row") } terpilih</span>
+    </span>
+    if p.ExportURL != "" {
+      <button
+        type="button"
+        @click={ "window.location='" + p.ExportURL + "?ids=' + selected.join(',')" }
+        class="text-xs px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20"
+      >Ekspor</button>
+    }
+    if p.DeleteURL != "" {
+      <button
+        type="button"
+        @click={ "if (confirm('Hapus ' + selected.length + ' " + emptyStringFallback(p.ItemLabel, "row") + "?')) { bulkSubmit('" + p.DeleteURL + "', '" + emptyStringFallback(p.FormName, "ids") + "', selected); }" }
+        class="text-xs px-3 py-1.5 rounded-full bg-rose-500 hover:bg-rose-600 text-white"
+      >Hapus</button>
+    }
+    <button
+      type="button"
+      @click="selected = []"
+      class="text-xs px-2 py-1 rounded-full text-slate-300 hover:text-white"
+      aria-label="Batal pilihan"
+    >Batal</button>
+  </div>
+}

@@ -1,0 +1,33 @@
+package components
+
+import "github.com/omanjaya/tokobangunan/internal/view/icon"
+
+// AlertProps - inline alert untuk page/form.
+// Variant: info | success | warning | danger (default info)
+type AlertProps struct {
+  Variant string
+  Title   string
+  Message string
+  Class   string
+}
+
+templ Alert(p AlertProps) {
+  {{ st := alertVariantStyle(p.Variant) }}
+  <div
+    class={ "rounded-lg border px-4 py-3 flex items-start gap-3", st.Container, p.Class }
+    role="alert"
+  >
+    <span class={ "shrink-0 mt-0.5", st.IconClass }>
+      @icon.Render(st.IconName, 18, "")
+    </span>
+    <div class="flex-1 min-w-0 text-sm">
+      if p.Title != "" {
+        <div class={ "font-semibold", st.TitleCls }>{ p.Title }</div>
+      }
+      if p.Message != "" {
+        <div class="mt-0.5 opacity-90">{ p.Message }</div>
+      }
+      { children... }
+    </div>
+  </div>
+}

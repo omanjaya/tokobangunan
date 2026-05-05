@@ -1,0 +1,218 @@
+package piutang
+
+import (
+  "fmt"
+  "strconv"
+  "time"
+
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ MitraDetail(p MitraDetailProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Piutang Mitra",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Keuangan" },
+      { Label: "Piutang", Href: "/piutang" },
+      { Label: p.Mitra.Nama },
+    },
+  }) {
+    @components.PageHeader(p.Mitra.Nama, "Detail piutang & invoice belum lunas.") {
+      <a href={ templ.SafeURL(fmt.Sprintf("/mitra/%d", p.Mitra.ID)) } class="btn-secondary btn-md">
+        @icon.Users(16, "")
+        <span>Profil Mitra</span>
+      </a>
+    }
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+      <div class="lg:col-span-2 space-y-4">
+        @components.Card(components.CardProps{ Title: "Invoice Belum Lunas" }) {
+          if len(p.Invoices) == 0 {
+            <p class="text-sm text-slate-500">Tidak ada invoice belum lunas.</p>
+          } else {
+            @invoiceTable(p.Invoices)
+          }
+        }
+        @paymentForm(p)
+      </div>
+      <div class="space-y-4">
+        @summaryCard(p.Summary)
+        @mitraInfoCard(p.Mitra)
+      </div>
+    </div>
+  }
+}
+
+templ summaryCard(s *domain.PiutangSummary) {
+  @components.Card(components.CardProps{ Title: "Ringkasan Piutang" }) {
+    <dl class="space-y-2 text-sm">
+      <div class="flex justify-between">
+        <dt class="text-slate-500">Total transaksi</dt>
+        <dd class="num">{ format.Rupiah(s.TotalPenjualan) }</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-slate-500">Sudah dibayar</dt>
+        <dd class="text-emerald-700 num">{ format.Rupiah(s.TotalDibayar) }</dd>
+      </div>
+      <div class="flex justify-between border-t pt-2">
+        <dt class="font-semibold">Outstanding</dt>
+        <dd class="font-bold text-lg text-rose-600 num">{ format.Rupiah(s.Outstanding) }</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-slate-500">Jumlah invoice</dt>
+        <dd>{ strconv.Itoa(s.JumlahInvoice) }</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-slate-500">Aging worst</dt>
+        <dd>
+          @components.Badge(AgingLabel(s.Aging), AgingVariant(s.Aging))
+        </dd>
+      </div>
+    </dl>
+  }
+}
+
+templ mitraInfoCard(m *domain.Mitra) {
+  @components.Card(components.CardProps{ Title: "Informasi Mitra" }) {
+    <dl class="space-y-2 text-sm">
+      <div class="flex justify-between">
+        <dt class="text-slate-500">Kode</dt>
+        <dd class="font-mono text-xs">{ m.Kode }</dd>
+      </div>
+      if m.Kontak != nil && *m.Kontak != "" {
+        <div class="flex justify-between">
+          <dt class="text-slate-500">Kontak</dt>
+          <dd>{ *m.Kontak }</dd>
+        </div>
+      }
+      <div class="flex justify-between">
+        <dt class="text-slate-500">Tempo</dt>
+        <dd>{ strconv.Itoa(m.JatuhTempoHari) } hari</dd>
+      </div>
+      if m.LimitKredit > 0 {
+        <div class="flex justify-between">
+          <dt class="text-slate-500">Limit kredit</dt>
+          <dd class="num">{ format.Rupiah(m.LimitKredit) }</dd>
+        </div>
+      }
+    </dl>
+  }
+}
+
+templ invoiceTable(rows []domain.PiutangInvoice) {
+  <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <tr>
+          <th class="px-3 py-2 text-left">Nomor</th>
+          <th class="px-3 py-2 text-left">Tanggal</th>
+          <th class="px-3 py-2 text-left">Tempo</th>
+          <th class="px-3 py-2 text-right">Total</th>
+          <th class="px-3 py-2 text-right">Dibayar</th>
+          <th class="px-3 py-2 text-right">Outstanding</th>
+          <th class="px-3 py-2 text-left">Aging</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        for _, inv := range rows {
+          <tr>
+            <td class="px-3 py-2 font-mono text-xs">{ inv.NomorKwitansi }</td>
+            <td class="px-3 py-2">{ inv.Tanggal.Format("02 Jan 2006") }</td>
+            <td class="px-3 py-2">
+              if inv.JatuhTempo != nil {
+                { inv.JatuhTempo.Format("02 Jan 2006") }
+              } else {
+                <span class="text-slate-500">-</span>
+              }
+            </td>
+            <td class="px-3 py-2 text-right num">{ format.Rupiah(inv.Total) }</td>
+            <td class="px-3 py-2 text-right text-emerald-700 num">{ format.Rupiah(inv.Dibayar) }</td>
+            <td class="px-3 py-2 text-right font-semibold text-rose-600 num">{ format.Rupiah(inv.Outstanding) }</td>
+            <td class="px-3 py-2">
+              @components.Badge(AgingLabel(inv.Aging), AgingVariant(inv.Aging))
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+templ paymentForm(p MitraDetailProps) {
+  if p.Summary != nil && p.Summary.Outstanding > 0 {
+    @components.Card(components.CardProps{ Title: "Catat Pembayaran",
+      Subtitle: "Outstanding total: " + format.Rupiah(p.Summary.Outstanding) }) {
+      <div class="mb-3 flex items-center gap-2 text-sm">
+        <label class="inline-flex items-center gap-1.5 cursor-pointer">
+          <input type="radio" name="bayar_mode" value="batch" checked
+                 onchange="document.getElementById('inv-select').classList.add('hidden');
+                          document.getElementById('frm-batch').setAttribute('action','/pembayaran/batch');" />
+          <span>Batch FIFO ke invoice tertua</span>
+        </label>
+        <label class="inline-flex items-center gap-1.5 cursor-pointer">
+          <input type="radio" name="bayar_mode" value="specific"
+                 onchange="document.getElementById('inv-select').classList.remove('hidden');
+                          document.getElementById('frm-batch').setAttribute('action','/pembayaran');" />
+          <span>Bayar invoice spesifik</span>
+        </label>
+      </div>
+      <form id="frm-batch" method="post" action="/pembayaran/batch" class="space-y-4">
+        <input type="hidden" name="csrf_token" value={ p.CSRFToken } />
+        <input type="hidden" name="mitra_id" value={ strconv.FormatInt(p.Mitra.ID, 10) } />
+
+        <div id="inv-select" class="hidden">
+          @components.FormField(components.FormFieldProps{ ID: "penjualan_id", Label: "Invoice" }) {
+            <select id="penjualan_id" name="penjualan_id" class="input">
+              <option value="">— pilih invoice —</option>
+              for _, inv := range p.Invoices {
+                <option value={ strconv.FormatInt(inv.PenjualanID, 10) }>
+                  { inv.NomorKwitansi } · sisa { format.Rupiah(inv.Outstanding) }
+                </option>
+              }
+            </select>
+          }
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          @components.FormField(components.FormFieldProps{ ID: "tanggal", Label: "Tanggal", Required: true }) {
+            @components.Input(components.InputProps{ ID: "tanggal", Name: "tanggal", Type: "date",
+              Value: time.Now().Format("2006-01-02"), Required: true })
+          }
+          @components.FormField(components.FormFieldProps{ ID: "jumlah", Label: "Jumlah (Rp)", Required: true }) {
+            @components.Input(components.InputProps{ ID: "jumlah", Name: "jumlah", Type: "number",
+              Required: true, Placeholder: "Mis. 5000000" })
+          }
+          @components.FormField(components.FormFieldProps{ ID: "metode", Label: "Metode", Required: true }) {
+            <select id="metode" name="metode" class="input" required>
+              <option value="tunai">Tunai</option>
+              <option value="transfer">Transfer</option>
+              <option value="cek">Cek</option>
+              <option value="giro">Giro</option>
+            </select>
+          }
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          @components.FormField(components.FormFieldProps{ ID: "referensi", Label: "Referensi" }) {
+            @components.Input(components.InputProps{ ID: "referensi", Name: "referensi", Type: "text" })
+          }
+          @components.FormField(components.FormFieldProps{ ID: "catatan", Label: "Catatan" }) {
+            <textarea id="catatan" name="catatan" rows="2" class="input"></textarea>
+          }
+        </div>
+        <div class="flex justify-end">
+          @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+            @icon.Check(16, "")
+            <span>Simpan Pembayaran</span>
+          }
+        </div>
+      </form>
+    }
+  }
+}
+

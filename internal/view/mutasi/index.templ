@@ -1,0 +1,199 @@
+package mutasi
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Index(p IndexProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Mutasi Antar Gudang",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Inventori" },
+      { Label: "Mutasi" },
+    },
+  }) {
+    @components.PageHeader("Mutasi Antar Gudang", "Transfer stok antar cabang dengan timeline draft, dikirim, dan diterima.") {
+      @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Href: "/mutasi/baru" }) {
+        @icon.Plus(16, "")
+        <span>Mutasi Baru</span>
+      }
+    }
+
+    @filterBar(p)
+
+    @components.Card(components.CardProps{ NoPad: true }) {
+      if len(p.Rows) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "truck",
+          Title: "Belum ada mutasi",
+          Description: "Klik 'Mutasi Baru' untuk membuat dokumen transfer stok antar gudang.",
+        })
+      } else {
+        @mutasiTable(p.Rows)
+        @paginationFooter(p)
+      }
+    }
+  }
+}
+
+templ filterBar(p IndexProps) {
+  <form method="get" action="/mutasi"
+        class="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
+    <div>
+      @components.FormField(components.FormFieldProps{ ID: "from", Label: "Dari" }) {
+        @components.Input(components.InputProps{ ID: "from", Name: "from", Type: "date", Value: p.From })
+      }
+    </div>
+    <div>
+      @components.FormField(components.FormFieldProps{ ID: "to", Label: "Sampai" }) {
+        @components.Input(components.InputProps{ ID: "to", Name: "to", Type: "date", Value: p.To })
+      }
+    </div>
+    <div>
+      @components.FormField(components.FormFieldProps{ ID: "gudang_asal_id", Label: "Gudang Asal" }) {
+        @gudangSelect("gudang_asal_id", p.GudangAsalID, p.Gudangs)
+      }
+    </div>
+    <div>
+      @components.FormField(components.FormFieldProps{ ID: "gudang_tujuan_id", Label: "Gudang Tujuan" }) {
+        @gudangSelect("gudang_tujuan_id", p.GudangTujuanID, p.Gudangs)
+      }
+    </div>
+    <div>
+      @components.FormField(components.FormFieldProps{ ID: "status", Label: "Status" }) {
+        <select id="status" name="status" class="input">
+          <option value="">Semua status</option>
+          @statusOption("draft", "Draft", p.Status)
+          @statusOption("dikirim", "Dikirim", p.Status)
+          @statusOption("diterima", "Diterima", p.Status)
+          @statusOption("dibatalkan", "Dibatalkan", p.Status)
+        </select>
+      }
+    </div>
+    <div class="md:col-span-5 flex justify-end gap-2">
+      @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: "/mutasi" }) {
+        <span>Reset</span>
+      }
+      @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+        @icon.Filter(14, "")
+        <span>Terapkan</span>
+      }
+    </div>
+  </form>
+}
+
+templ statusOption(value, label, current string) {
+  if value == current {
+    <option value={ value } selected>{ label }</option>
+  } else {
+    <option value={ value }>{ label }</option>
+  }
+}
+
+templ gudangSelect(name string, current int64, opts []GudangLite) {
+  <select id={ name } name={ name } class="input">
+    <option value="0">Semua gudang</option>
+    for _, g := range opts {
+      if g.ID == current {
+        <option value={ strconv.FormatInt(g.ID, 10) } selected>{ g.Nama }</option>
+      } else {
+        <option value={ strconv.FormatInt(g.ID, 10) }>{ g.Nama }</option>
+      }
+    }
+  </select>
+}
+
+templ mutasiTable(rows []Row) {
+  <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-sm">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Nomor</th>
+          <th class="px-4 py-3 text-left font-medium">Tanggal</th>
+          <th class="px-4 py-3 text-left font-medium">Asal</th>
+          <th class="px-4 py-3 text-left font-medium">Tujuan</th>
+          <th class="px-4 py-3 text-right font-medium">Item</th>
+          <th class="px-4 py-3 text-left font-medium">Status</th>
+          <th class="px-4 py-3 text-right font-medium">Aksi</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 bg-white">
+        for _, r := range rows {
+          @rowTemplate(r)
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+templ rowTemplate(r Row) {
+  <tr class="hover:bg-slate-50">
+    <td class="px-4 py-3 font-medium text-slate-900">{ r.Mutasi.NomorMutasi }</td>
+    <td class="px-4 py-3 text-slate-600">{ r.Mutasi.Tanggal.Format("2006-01-02") }</td>
+    <td class="px-4 py-3 text-slate-700">{ r.GudangAsalNama }</td>
+    <td class="px-4 py-3 text-slate-700">{ r.GudangTujuanNama }</td>
+    <td class="px-4 py-3 text-right text-slate-700">{ strconv.Itoa(r.JumlahItem) }</td>
+    <td class="px-4 py-3">
+      @components.BadgeWithDot(StatusLabel(r.Mutasi.Status), StatusBadgeVariant(r.Mutasi.Status))
+    </td>
+    <td class="px-4 py-3 text-right">
+      <a href={ templ.SafeURL(fmt.Sprintf("/mutasi/%d", r.Mutasi.ID)) }
+         class="text-brand-600 hover:text-brand-700 text-sm font-medium">Detail</a>
+    </td>
+  </tr>
+}
+
+templ paginationFooter(p IndexProps) {
+  <div class="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm text-slate-600">
+    <div>
+      { fmt.Sprintf("Total %d mutasi · halaman %d dari %d", p.Total, p.Page, p.TotalPages) }
+    </div>
+    <div class="flex items-center gap-2">
+      if p.Page > 1 {
+        @components.Button(components.ButtonProps{
+          Variant: "secondary", Size: "sm",
+          Href: pageURL(p, p.Page-1),
+        }) {
+          @icon.ChevronLeft(14, "")
+          <span>Sebelumnya</span>
+        }
+      }
+      if p.Page < p.TotalPages {
+        @components.Button(components.ButtonProps{
+          Variant: "secondary", Size: "sm",
+          Href: pageURL(p, p.Page+1),
+        }) {
+          <span>Berikutnya</span>
+          @icon.ChevronRight(14, "")
+        }
+      }
+    </div>
+  </div>
+}
+
+func pageURL(p IndexProps, page int) string {
+  u := "/mutasi?page=" + strconv.Itoa(page)
+  if p.From != "" {
+    u += "&from=" + p.From
+  }
+  if p.To != "" {
+    u += "&to=" + p.To
+  }
+  if p.GudangAsalID > 0 {
+    u += "&gudang_asal_id=" + strconv.FormatInt(p.GudangAsalID, 10)
+  }
+  if p.GudangTujuanID > 0 {
+    u += "&gudang_tujuan_id=" + strconv.FormatInt(p.GudangTujuanID, 10)
+  }
+  if p.Status != "" {
+    u += "&status=" + p.Status
+  }
+  return u
+}

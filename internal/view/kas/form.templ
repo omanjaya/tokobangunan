@@ -1,0 +1,180 @@
+package kas
+
+import (
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Form(p FormProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: formTitle(p.Input.Tipe),
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Kas", Href: "/kas" },
+      { Label: formTitle(p.Input.Tipe) },
+    },
+  }) {
+    @components.PageHeader(formTitle(p.Input.Tipe), formSubtitle(p.Input.Tipe)) {}
+
+    if p.General != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "danger", Message: p.General })
+      </div>
+    }
+
+    @components.Card(components.CardProps{}) {
+      <form method="post" action="/kas" class="space-y-4 max-w-2xl"
+            x-data={ "{ tipe: '" + tipeOrDefault(p.Input.Tipe) + "' }" }>
+
+        <div class="flex gap-2">
+          <label class="flex-1 cursor-pointer">
+            <input type="radio" name="tipe" value="masuk" x-model="tipe" class="sr-only peer"/>
+            <div class="border rounded-lg p-3 text-center peer-checked:border-emerald-500 peer-checked:bg-emerald-50">
+              <span class="font-semibold text-emerald-700">Kas Masuk</span>
+            </div>
+          </label>
+          <label class="flex-1 cursor-pointer">
+            <input type="radio" name="tipe" value="keluar" x-model="tipe" class="sr-only peer"/>
+            <div class="border rounded-lg p-3 text-center peer-checked:border-rose-500 peer-checked:bg-rose-50">
+              <span class="font-semibold text-rose-700">Kas Keluar</span>
+            </div>
+          </label>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          @components.FormField(components.FormFieldProps{ ID: "tanggal", Label: "Tanggal", Required: true, Error: p.Errors["tanggal"] }) {
+            <input id="tanggal" name="tanggal" type="date" required
+                   value={ p.Input.Tanggal } class="input"/>
+          }
+
+          @components.FormField(components.FormFieldProps{ ID: "gudang_id", Label: "Gudang" }) {
+            <select id="gudang_id" name="gudang_id" class="input">
+              <option value="0">— Tidak terkait gudang —</option>
+              for _, g := range p.Gudangs {
+                if p.Input.GudangID != nil && *p.Input.GudangID == g.ID {
+                  <option value={ strconv.FormatInt(g.ID, 10) } selected>{ g.Kode } — { g.Nama }</option>
+                } else {
+                  <option value={ strconv.FormatInt(g.ID, 10) }>{ g.Kode } — { g.Nama }</option>
+                }
+              }
+            </select>
+          }
+        </div>
+
+        @components.FormField(components.FormFieldProps{ ID: "kategori", Label: "Kategori", Required: true, Error: p.Errors["kategori"] }) {
+          <select id="kategori" name="kategori" required class="input">
+            <option value="">— Pilih kategori —</option>
+            <optgroup label="Masuk" x-show="tipe === 'masuk'">
+              for _, k := range p.KategoriIn {
+                if p.Input.Kategori == k.Nama {
+                  <option value={ k.Nama } selected>{ k.Nama }</option>
+                } else {
+                  <option value={ k.Nama }>{ k.Nama }</option>
+                }
+              }
+            </optgroup>
+            <optgroup label="Keluar" x-show="tipe === 'keluar'">
+              for _, k := range p.KategoriOut {
+                if p.Input.Kategori == k.Nama {
+                  <option value={ k.Nama } selected>{ k.Nama }</option>
+                } else {
+                  <option value={ k.Nama }>{ k.Nama }</option>
+                }
+              }
+            </optgroup>
+          </select>
+        }
+
+        @components.FormField(components.FormFieldProps{ ID: "jumlah", Label: "Jumlah", Required: true, Error: p.Errors["jumlah"] }) {
+          @components.Input(components.InputProps{
+            ID: "jumlah", Name: "jumlah", Type: "number", Required: true,
+            Value: int64Str(p.Input.Jumlah),
+            Prefix: "Rp",
+            Placeholder: "0",
+            Attrs: templ.Attributes{ "min": "1" },
+          })
+        }
+
+        @components.FormField(components.FormFieldProps{ ID: "metode", Label: "Metode", Required: true, Error: p.Errors["metode"] }) {
+          <select id="metode" name="metode" required class="input">
+            for _, m := range []string{"tunai", "transfer", "cek"} {
+              if p.Input.Metode == m {
+                <option value={ m } selected>{ titleCase(m) }</option>
+              } else {
+                <option value={ m }>{ titleCase(m) }</option>
+              }
+            }
+          </select>
+        }
+
+        @components.FormField(components.FormFieldProps{ ID: "deskripsi", Label: "Deskripsi" }) {
+          @components.Input(components.InputProps{
+            ID: "deskripsi", Name: "deskripsi", Value: p.Input.Deskripsi,
+            Placeholder: "Penjelasan singkat…",
+          })
+        }
+
+        @components.FormField(components.FormFieldProps{ ID: "referensi", Label: "Referensi" }) {
+          @components.Input(components.InputProps{
+            ID: "referensi", Name: "referensi", Value: p.Input.Referensi,
+            Placeholder: "No. cek / no. rekening / dll.",
+          })
+        }
+
+        @components.FormField(components.FormFieldProps{ ID: "catatan", Label: "Catatan" }) {
+          <textarea id="catatan" name="catatan" rows="2" class="input"
+                    placeholder="Catatan tambahan…">{ p.Input.Catatan }</textarea>
+        }
+
+        <div class="flex items-center gap-2 pt-2 border-t border-slate-100">
+          @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+            @icon.Check(16, "")
+            <span>Simpan</span>
+          }
+          @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: "/kas" }) {
+            <span>Batal</span>
+          }
+        </div>
+      </form>
+    }
+  }
+}
+
+func formTitle(tipe string) string {
+  if tipe == "keluar" {
+    return "Kas Keluar"
+  }
+  return "Kas Masuk"
+}
+
+func formSubtitle(tipe string) string {
+  if tipe == "keluar" {
+    return "Catat pengeluaran kas (sewa, listrik, gaji, dll)."
+  }
+  return "Catat penerimaan kas non-penjualan (setoran modal, dll)."
+}
+
+func tipeOrDefault(t string) string {
+  if t == "" {
+    return "masuk"
+  }
+  return t
+}
+
+func int64Str(v int64) string {
+  if v <= 0 {
+    return ""
+  }
+  return strconv.FormatInt(v, 10)
+}
+
+func titleCase(s string) string {
+  if s == "" {
+    return s
+  }
+  return string(s[0]-32) + s[1:]
+}

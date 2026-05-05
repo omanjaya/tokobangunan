@@ -1,0 +1,156 @@
+package pembelian
+
+import (
+  "fmt"
+
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Show(p ShowProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Detail Pembelian",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Transaksi" },
+      { Label: "Pembelian", Href: "/pembelian" },
+      { Label: p.Pembelian.NomorPembelian },
+    },
+  }) {
+    @components.PageHeader("Detail Pembelian", p.Pembelian.NomorPembelian) {
+      if p.Pembelian.StatusBayar != "lunas" && p.Sisa > 0 {
+        <a href={ templ.SafeURL(fmt.Sprintf("#bayar-form")) } class="btn-primary btn-md">
+          @icon.Plus(16, "")
+          <span>Catat Pembayaran</span>
+        </a>
+      }
+    }
+
+    if p.GeneralErr != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "danger", Message: p.GeneralErr })
+      </div>
+    }
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-2 space-y-4">
+        @components.Card(components.CardProps{ Title: "Item" }) {
+          <table class="min-w-full divide-y divide-slate-200 text-sm">
+            <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th class="px-3 py-2 text-left">Produk</th>
+                <th class="px-3 py-2 text-right">Qty</th>
+                <th class="px-3 py-2 text-left">Sat</th>
+                <th class="px-3 py-2 text-right">Harga</th>
+                <th class="px-3 py-2 text-right">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              for _, it := range p.Pembelian.Items {
+                <tr>
+                  <td class="px-3 py-2">{ it.ProdukNama }</td>
+                  <td class="px-3 py-2 text-right">{ fmt.Sprintf("%g", it.Qty) }</td>
+                  <td class="px-3 py-2">{ it.SatuanKode }</td>
+                  <td class="px-3 py-2 text-right">{ format.Rupiah(it.HargaSatuan) }</td>
+                  <td class="px-3 py-2 text-right font-medium">{ format.Rupiah(it.Subtotal) }</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+
+        @components.Card(components.CardProps{ Title: "History Pembayaran" }) {
+          if len(p.Pembayarans) == 0 {
+            <p class="text-sm text-slate-500">Belum ada pembayaran ke supplier untuk pembelian ini.</p>
+          } else {
+            <table class="min-w-full divide-y divide-slate-200 text-sm">
+              <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th class="px-3 py-2 text-left">Tanggal</th>
+                  <th class="px-3 py-2 text-left">Metode</th>
+                  <th class="px-3 py-2 text-left">Referensi</th>
+                  <th class="px-3 py-2 text-right">Jumlah</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                for _, pay := range p.Pembayarans {
+                  <tr>
+                    <td class="px-3 py-2">{ pay.Tanggal.Format("02 Jan 2006") }</td>
+                    <td class="px-3 py-2 capitalize">{ pay.Metode }</td>
+                    <td class="px-3 py-2 text-slate-600">{ pay.Referensi }</td>
+                    <td class="px-3 py-2 text-right font-medium">{ format.Rupiah(pay.Jumlah) }</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+        }
+
+        if p.Pembelian.StatusBayar != "lunas" && p.Sisa > 0 {
+          <a id="bayar-form"></a>
+          @PaymentForm(p)
+        }
+      </div>
+
+      <div class="space-y-4">
+        @components.Card(components.CardProps{ Title: "Informasi" }) {
+          <dl class="text-sm space-y-2">
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Tanggal</dt>
+              <dd>{ p.Pembelian.Tanggal.Format("02 Jan 2006") }</dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Supplier</dt>
+              <dd class="font-medium">{ p.Pembelian.SupplierNama }</dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Gudang</dt>
+              <dd>{ p.Pembelian.GudangNama }</dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Status</dt>
+              <dd>
+                @statusBadge(string(p.Pembelian.StatusBayar))
+              </dd>
+            </div>
+            if p.Pembelian.JatuhTempo != nil {
+              <div class="flex justify-between">
+                <dt class="text-slate-500">Jatuh Tempo</dt>
+                <dd>{ p.Pembelian.JatuhTempo.Format("02 Jan 2006") }</dd>
+              </div>
+            }
+            if p.Pembelian.Catatan != "" {
+              <div>
+                <dt class="text-slate-500 mb-1">Catatan</dt>
+                <dd class="text-slate-700">{ p.Pembelian.Catatan }</dd>
+              </div>
+            }
+          </dl>
+        }
+        @components.Card(components.CardProps{ Title: "Total" }) {
+          <dl class="text-sm space-y-2">
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Subtotal</dt>
+              <dd>{ format.Rupiah(p.Pembelian.Subtotal) }</dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Diskon</dt>
+              <dd>{ format.Rupiah(p.Pembelian.Diskon) }</dd>
+            </div>
+            <div class="flex justify-between border-t pt-2">
+              <dt class="font-semibold">Total</dt>
+              <dd class="font-bold text-lg">{ format.Rupiah(p.Pembelian.Total) }</dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Sisa Hutang</dt>
+              <dd class="font-medium text-rose-600">{ format.Rupiah(p.Sisa) }</dd>
+            </div>
+          </dl>
+        }
+      </div>
+    </div>
+  }
+}

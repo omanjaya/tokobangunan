@@ -1,0 +1,46 @@
+package onboarding
+
+import (
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+)
+
+templ Done(p DoneProps) {
+  @wizardLayout("Setup Selesai", p.Steps) {
+    @components.Card(components.CardProps{}) {
+      <div class="text-center py-6">
+        <div class="inline-flex items-center justify-center h-16 w-16 rounded-full bg-emerald-100 text-emerald-700 mb-4">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <h2 class="text-xl font-semibold text-slate-900 mb-2">Setup Selesai</h2>
+        <p class="text-sm text-slate-500">Aplikasi siap dipakai untuk transaksi.</p>
+      </div>
+      <dl class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+        @summaryItem("Toko", tokoNamaOf(p.Info))
+        @summaryItem("Gudang aktif", strconv.Itoa(p.GudangCount))
+        @summaryItem("Produk", strconv.Itoa(p.ProdukCount))
+      </dl>
+      <div class="flex justify-end mt-6 pt-4 border-t border-slate-100">
+        @components.Button(components.ButtonProps{Variant: "primary", Href: "/dashboard"}) {
+          <span>Masuk Dashboard</span>
+        }
+      </div>
+    }
+  }
+}
+
+templ summaryItem(label, value string) {
+  <div class="p-4 rounded-lg bg-slate-50 border border-slate-200 text-center">
+    <dt class="text-xs uppercase tracking-wide text-slate-500">{ label }</dt>
+    <dd class="mt-1 text-base font-semibold text-slate-900">{ value }</dd>
+  </div>
+}
+
+func tokoNamaOf(info *domain.TokoInfo) string {
+  if info == nil || info.Nama == "" {
+    return "—"
+  }
+  return info.Nama
+}

@@ -1,0 +1,213 @@
+package mutasi
+
+import (
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Form(p FormProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Mutasi Baru",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Inventori" },
+      { Label: "Mutasi", Href: "/mutasi" },
+      { Label: "Mutasi Baru" },
+    },
+  }) {
+    @components.PageHeader("Mutasi Baru", "Buat dokumen transfer stok antar gudang. Stok akan terkurang saat status diubah ke 'Dikirim'.")
+    @FormCard(p)
+  }
+}
+
+templ FormCard(p FormProps) {
+  <form
+    id="mutasi-form"
+    method="post"
+    action="/mutasi"
+    hx-post="/mutasi"
+    hx-target="#mutasi-form"
+    hx-swap="outerHTML"
+    class="space-y-4"
+    x-data={ formInitData(p) }
+  >
+    if p.General != "" {
+      @components.Alert(components.AlertProps{ Variant: "danger", Message: p.General })
+    }
+    <input type="hidden" name="client_uuid" value={ p.ClientUUID } />
+
+    @components.Card(components.CardProps{ Title: "Informasi Mutasi" }) {
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        @components.FormField(components.FormFieldProps{
+          ID: "tanggal", Label: "Tanggal", Required: true,
+          Error: p.Errors["tanggal"],
+        }) {
+          @components.Input(components.InputProps{
+            ID: "tanggal", Name: "tanggal", Type: "date",
+            Value: defaultStr(p.Input.Tanggal, p.DefaultDate),
+            Required: true, HasError: p.Errors["tanggal"] != "",
+          })
+        }
+        @components.FormField(components.FormFieldProps{
+          ID: "gudang_asal_id", Label: "Gudang Asal", Required: true,
+          Error: p.Errors["gudangasalid"],
+        }) {
+          @gudangSelectForm("gudang_asal_id", p.Input.GudangAsalID, p.Gudangs)
+        }
+        @components.FormField(components.FormFieldProps{
+          ID: "gudang_tujuan_id", Label: "Gudang Tujuan", Required: true,
+          Helper: "Tidak boleh sama dengan asal.",
+          Error: p.Errors["gudangtujuanid"],
+        }) {
+          @gudangSelectForm("gudang_tujuan_id", p.Input.GudangTujuanID, p.Gudangs)
+        }
+      </div>
+      <div class="mt-4">
+        @components.FormField(components.FormFieldProps{
+          ID: "catatan", Label: "Catatan",
+          Helper: "Opsional. Mis. nomor surat jalan, alasan transfer.",
+        }) {
+          <textarea id="catatan" name="catatan" rows="2" class="input">{ p.Input.Catatan }</textarea>
+        }
+      </div>
+    }
+
+    @components.Card(components.CardProps{ Title: "Item yang Ditransfer" }) {
+      <template x-if="items.length === 0">
+        <p class="text-sm text-slate-500 italic">Belum ada item. Klik 'Tambah Item' untuk mulai.</p>
+      </template>
+
+      <div class="space-y-3" x-show="items.length > 0">
+        <template x-for="(it, idx) in items" :key="it.tempId">
+          <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start border border-slate-200 rounded-lg p-3 bg-slate-50/50">
+            <div class="md:col-span-5">
+              <label class="block text-xs font-medium text-slate-600 mb-1">Produk</label>
+              <input type="text" :name="'items[' + idx + '][produk_label]'" x-model="it.label"
+                     class="input" placeholder="Cari produk..." readonly />
+              <input type="hidden" :name="'items[' + idx + '][produk_id]'" :value="it.produk_id" />
+              <button type="button" class="text-xs text-brand-600 mt-1"
+                      @click="openPicker(idx)">Pilih produk</button>
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-xs font-medium text-slate-600 mb-1">Qty</label>
+              <input type="number" step="0.0001" min="0" class="input"
+                     :name="'items[' + idx + '][qty]'" x-model.number="it.qty" />
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-xs font-medium text-slate-600 mb-1">Satuan</label>
+              <select class="input" :name="'items[' + idx + '][satuan_id]'" x-model.number="it.satuan_id">
+                for _, s := range p.Satuans {
+                  <option value={ strconv.FormatInt(s.ID, 10) }>{ s.Kode }</option>
+                }
+              </select>
+            </div>
+            <div class="md:col-span-2 text-xs text-slate-600 pt-6">
+              <span x-show="it.stok_asal !== null">
+                Stok asal: <span class="font-medium" x-text="it.stok_asal"></span>
+              </span>
+            </div>
+            <div class="md:col-span-1 pt-6 text-right">
+              <button type="button" class="text-rose-600 hover:text-rose-700 text-sm"
+                      @click="removeItem(idx)" aria-label="Hapus">
+                @icon.Trash(16, "")
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <div class="pt-2">
+          @components.Button(components.ButtonProps{ Variant: "secondary", Size: "sm",
+            HxAttrs: templ.Attributes{ "@click": "addItem()", "type": "button" } }) {
+            @icon.Plus(14, "")
+            <span>Tambah Item</span>
+          }
+        </div>
+
+        <!-- Mini search modal: HTMX-driven dropdown -->
+        <div x-show="picker.open" x-cloak
+             class="fixed inset-0 bg-black/30 z-50 flex items-start justify-center pt-20"
+             @click.self="picker.open = false">
+          <div class="bg-white rounded-xl shadow-lg w-full max-w-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="font-semibold text-slate-900">Pilih Produk</h4>
+              <button type="button" class="text-slate-400" @click="picker.open = false" aria-label="Tutup">
+                @icon.X(18, "")
+              </button>
+            </div>
+            <input type="text" class="input mb-3" placeholder="Cari nama atau SKU..."
+                   x-model="picker.query"
+                   hx-get="/produk/search"
+                   hx-trigger="keyup changed delay:250ms"
+                   hx-target="#mutasi-picker-results"
+                   :hx-vals="JSON.stringify({ q: picker.query })" />
+            <div id="mutasi-picker-results" class="max-h-72 overflow-y-auto"></div>
+            <p class="text-xs text-slate-500 mt-2">Klik nama produk untuk memilih.</p>
+          </div>
+        </div>
+      </div>
+    }
+
+    <div class="flex items-center justify-end gap-2 pt-2">
+      @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: "/mutasi" }) {
+        <span>Batal</span>
+      }
+      @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Type: "submit",
+        HxAttrs: templ.Attributes{ "name": "submit_now", "value": "false" } }) {
+        @icon.Check(16, "")
+        <span>Simpan Draft</span>
+      }
+      @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit",
+        HxAttrs: templ.Attributes{ "name": "submit_now", "value": "true" } }) {
+        @icon.Truck(16, "")
+        <span>Simpan & Kirim</span>
+      }
+    </div>
+  </form>
+}
+
+templ gudangSelectForm(name string, current int64, opts []GudangLite) {
+  <select id={ name } name={ name } class="input" required>
+    <option value="0">— Pilih gudang —</option>
+    for _, g := range opts {
+      if g.ID == current {
+        <option value={ strconv.FormatInt(g.ID, 10) } selected>{ g.Nama }</option>
+      } else {
+        <option value={ strconv.FormatInt(g.ID, 10) }>{ g.Nama }</option>
+      }
+    }
+  </select>
+}
+
+func defaultStr(v, d string) string {
+  if v == "" {
+    return d
+  }
+  return v
+}
+
+// formInitData - serialize Alpine state init.
+func formInitData(p FormProps) string {
+  return `{
+    items: [],
+    nextId: 1,
+    picker: { open: false, query: '', forIndex: -1 },
+    addItem() {
+      this.items.push({ tempId: this.nextId++, produk_id: 0, label: '', qty: 1, satuan_id: 0, stok_asal: null });
+    },
+    removeItem(i) { this.items.splice(i, 1); },
+    openPicker(i) { this.picker.open = true; this.picker.forIndex = i; this.picker.query = ''; },
+    selectProduk(id, label, satuanId) {
+      const idx = this.picker.forIndex;
+      if (idx >= 0 && this.items[idx]) {
+        this.items[idx].produk_id = id;
+        this.items[idx].label = label;
+        if (satuanId) this.items[idx].satuan_id = satuanId;
+      }
+      this.picker.open = false;
+    }
+  }`
+}

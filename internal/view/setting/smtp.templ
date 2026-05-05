@@ -1,0 +1,114 @@
+package setting
+
+import (
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// SMTPProps - props halaman setting SMTP.
+type SMTPProps struct {
+  Nav       layout.NavData
+  User      layout.UserData
+  CSRFToken string
+  Cfg       *domain.SMTPConfig
+  Flash     string
+  Error     string
+  TestEmail string
+}
+
+templ SMTP(p SMTPProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "SMTP",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Pengaturan", Href: "/setting" },
+      { Label: "SMTP" },
+    },
+  }) {
+    @components.PageHeader("Konfigurasi SMTP", "Pengaturan email pengirim untuk kirim kwitansi & notifikasi.") {}
+
+    if p.Flash != "" {
+      @components.Alert(components.AlertProps{ Variant: "success", Message: p.Flash })
+    }
+    if p.Error != "" {
+      @components.Alert(components.AlertProps{ Variant: "danger", Message: p.Error })
+    }
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-2">
+        @components.Card(components.CardProps{ Title: "Pengaturan SMTP" }) {
+          <form method="post" action="/setting/smtp" class="space-y-4">
+            <input type="hidden" name="csrf_token" value={ p.CSRFToken }/>
+
+            @components.FormField(components.FormFieldProps{ ID: "host", Label: "SMTP Host", Required: true, Helper: "Mis. smtp.gmail.com" }) {
+              @components.Input(components.InputProps{ ID: "host", Name: "host", Value: smtpHost(p.Cfg) })
+            }
+            @components.FormField(components.FormFieldProps{ ID: "port", Label: "Port", Required: true, Helper: "Umum: 587 (TLS) / 465 (SSL)" }) {
+              @components.Input(components.InputProps{ ID: "port", Name: "port", Value: smtpPort(p.Cfg) })
+            }
+            @components.FormField(components.FormFieldProps{ ID: "username", Label: "Username" }) {
+              @components.Input(components.InputProps{ ID: "username", Name: "username", Value: smtpUser(p.Cfg) })
+            }
+            @components.FormField(components.FormFieldProps{ ID: "password", Label: "Password", Helper: "Kosongkan untuk tidak mengubah" }) {
+              @components.Input(components.InputProps{ ID: "password", Name: "password", Type: "password", Placeholder: "(tidak diubah)" })
+            }
+            @components.FormField(components.FormFieldProps{ ID: "from", Label: "Email Pengirim (From)", Required: true, Helper: "Mis. noreply@toko.com" }) {
+              @components.Input(components.InputProps{ ID: "from", Name: "from", Type: "email", Value: smtpFrom(p.Cfg) })
+            }
+            <label class="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="enabled" value="true" checked?={ p.Cfg != nil && p.Cfg.Enabled }/>
+              <span>Aktifkan pengiriman email</span>
+            </label>
+
+            <div class="pt-2 flex gap-2">
+              @components.Button(components.ButtonProps{ Type: "submit", Variant: "primary" }) {
+                <span>Simpan</span>
+              }
+              @components.Button(components.ButtonProps{ Variant: "secondary", Href: "/setting" }) {
+                <span>Batal</span>
+              }
+            </div>
+          </form>
+        }
+      </div>
+      <div>
+        @components.Card(components.CardProps{ Title: "Test Koneksi" }) {
+          <form method="post" action="/setting/smtp/test" class="space-y-3">
+            <input type="hidden" name="csrf_token" value={ p.CSRFToken }/>
+            @components.FormField(components.FormFieldProps{ ID: "test_email", Label: "Kirim email test ke", Helper: "Pakai email Anda untuk uji" }) {
+              @components.Input(components.InputProps{ ID: "test_email", Name: "test_email", Type: "email", Value: p.TestEmail, Placeholder: "owner@toko.com" })
+            }
+            @components.Button(components.ButtonProps{ Type: "submit", Variant: "secondary" }) {
+              <span>Kirim Test</span>
+            }
+          </form>
+          <p class="text-xs text-slate-500 mt-3">
+            Test akan menggunakan setting yang sudah disimpan. Simpan dulu sebelum menguji.
+          </p>
+        }
+      </div>
+    </div>
+  }
+}
+
+func smtpHost(c *domain.SMTPConfig) string {
+  if c == nil { return "" }
+  return c.Host
+}
+
+func smtpPort(c *domain.SMTPConfig) string {
+  if c == nil { return "" }
+  return c.Port
+}
+
+func smtpUser(c *domain.SMTPConfig) string {
+  if c == nil { return "" }
+  return c.Username
+}
+
+func smtpFrom(c *domain.SMTPConfig) string {
+  if c == nil { return "" }
+  return c.From
+}

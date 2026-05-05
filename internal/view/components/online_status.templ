@@ -1,0 +1,83 @@
+package components
+
+// OnlineStatus - badge online/offline + jumlah antrian sync + popover detail.
+// Bergantung pada window.onlineStatus() (didefinisikan di app.js)
+// dan window.tbSync (didefinisikan di sync.js).
+templ OnlineStatus() {
+  <div
+    x-data="onlineStatus()"
+    x-init="init()"
+    class="relative inline-flex items-center"
+    @mouseenter="hover = true"
+    @mouseleave="hover = false"
+  >
+    <template x-if="online">
+      <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default">
+        <span class="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true"></span>
+        Online
+        <template x-if="pending > 0">
+          <button
+            type="button"
+            class="ml-1 underline decoration-dotted hover:text-emerald-900"
+            @click="manualSync()"
+            title="Klik untuk sync manual"
+          >
+            <span x-text="`${pending} antri`"></span>
+          </button>
+        </template>
+      </span>
+    </template>
+    <template x-if="!online">
+      <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200 cursor-default">
+        <span class="h-1.5 w-1.5 rounded-full bg-rose-500" aria-hidden="true"></span>
+        Offline
+        <template x-if="pending > 0">
+          <span x-text="`+ ${pending} antri`"></span>
+        </template>
+      </span>
+    </template>
+
+    <!-- Hover popover detail -->
+    <div x-show="hover" x-cloak x-transition.opacity
+         class="absolute right-0 top-full mt-2 z-30 w-64 p-3 rounded-lg border border-slate-200 bg-white shadow-lg text-xs space-y-2">
+      <div class="flex items-center justify-between">
+        <span class="text-slate-500">Status</span>
+        <span x-text="online ? 'Connected' : 'Offline'"
+              :class="online ? 'text-emerald-700 font-medium' : 'text-rose-700 font-medium'"></span>
+      </div>
+      <div class="flex items-center justify-between" x-show="userName">
+        <span class="text-slate-500">User</span>
+        <span class="font-medium" x-text="userName"></span>
+      </div>
+      <div class="flex items-center justify-between">
+        <span class="text-slate-500">Antri sync</span>
+        <span class="font-mono" x-text="pending"></span>
+      </div>
+      <div class="flex items-center justify-between" x-show="!online && offlineSince">
+        <span class="text-slate-500">Offline sejak</span>
+        <span x-text="offlineAgo"></span>
+      </div>
+      <button type="button" @click="manualSync()"
+              :disabled="!online || pending === 0"
+              class="w-full mt-2 px-3 py-1.5 rounded-md bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 disabled:bg-slate-300 disabled:cursor-not-allowed">
+        Sync sekarang
+      </button>
+    </div>
+  </div>
+}
+
+// OfflineBanner - alert besar di top kalau offline > 5 menit.
+// Pasang di AppShell (atas content area). Konsumsi state dari onlineStatus().
+templ OfflineBanner() {
+  <div x-data="onlineStatus()" x-init="init()"
+       x-show="!online && offlineLong" x-cloak
+       class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 mb-4 flex items-start gap-3 text-sm">
+    <span class="shrink-0 mt-0.5 text-amber-700">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    </span>
+    <div class="flex-1 min-w-0">
+      <div class="font-semibold text-amber-900">Anda offline</div>
+      <div class="text-amber-800">Transaksi disimpan lokal dan akan otomatis tersinkron saat online.</div>
+    </div>
+  </div>
+}

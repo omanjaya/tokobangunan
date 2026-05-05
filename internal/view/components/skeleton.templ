@@ -1,0 +1,35 @@
+package components
+
+// SkeletonTable - placeholder tabel saat HTMX loading.
+// Render `rows` baris skeleton dengan 5 kolom dummy.
+// Pasang inside #element ber-class `htmx-indicator` (lihat input.css).
+templ SkeletonTable(rows int) {
+  <div class="animate-pulse divide-y divide-slate-100">
+    for i := 0; i < skelRowCount(rows); i++ {
+      <div class="px-4 py-3 flex items-center gap-3">
+        <div class="h-4 w-1/12 bg-slate-200 rounded"></div>
+        <div class="h-4 w-3/12 bg-slate-200 rounded"></div>
+        <div class="h-4 w-2/12 bg-slate-200 rounded"></div>
+        <div class="h-4 w-2/12 bg-slate-200 rounded"></div>
+        <div class="h-4 w-2/12 bg-slate-200 rounded ml-auto"></div>
+      </div>
+    }
+  </div>
+}
+
+// SkeletonRows - skeleton vertical untuk card list.
+templ SkeletonRows(rows int) {
+  <div class="animate-pulse space-y-2 p-4">
+    for i := 0; i < skelRowCount(rows); i++ {
+      <div class="h-4 bg-slate-200 rounded w-full"></div>
+    }
+  </div>
+}
+
+// skelRowCount default ke 5 jika n <= 0.
+func skelRowCount(n int) int {
+  if n <= 0 {
+    return 5
+  }
+  return n
+}

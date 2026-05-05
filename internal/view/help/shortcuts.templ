@@ -1,0 +1,110 @@
+package help
+
+import (
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// ShortcutsProps - halaman /help/shortcuts (full page, bukan modal).
+type ShortcutsProps struct {
+  Nav  layout.NavData
+  User layout.UserData
+}
+
+// Shortcut entry.
+type Shortcut struct {
+  Keys   []string
+  Action string
+}
+
+func globalShortcuts() []Shortcut {
+  return []Shortcut{
+    {Keys: []string{"?"}, Action: "Buka panduan shortcut"},
+    {Keys: []string{"Esc"}, Action: "Tutup modal / batalkan aksi"},
+    {Keys: []string{"/"}, Action: "Fokus ke kolom pencarian (jika tersedia)"},
+  }
+}
+
+func penjualanShortcuts() []Shortcut {
+  return []Shortcut{
+    {Keys: []string{"F2"}, Action: "Cari produk"},
+    {Keys: []string{"F3"}, Action: "Pilih mitra/pelanggan"},
+    {Keys: []string{"F4"}, Action: "Ubah metode pembayaran"},
+    {Keys: []string{"F8"}, Action: "Simpan & cetak struk"},
+    {Keys: []string{"Enter"}, Action: "Tambah item ke keranjang"},
+    {Keys: []string{"Del"}, Action: "Hapus item terpilih"},
+  }
+}
+
+func mutasiShortcuts() []Shortcut {
+  return []Shortcut{
+    {Keys: []string{"F2"}, Action: "Cari produk untuk dimutasi"},
+    {Keys: []string{"F3"}, Action: "Pilih gudang asal/tujuan"},
+    {Keys: []string{"F8"}, Action: "Simpan mutasi"},
+  }
+}
+
+templ Shortcuts(p ShortcutsProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Panduan Shortcut",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{ { Label: "Panduan Shortcut" } },
+  }) {
+    @components.PageHeader("Panduan Shortcut", "Tombol pintas untuk mempercepat operasi sehari-hari.") {}
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      @shortcutSection("Global", "info", globalShortcuts())
+      @shortcutSection("Penjualan / Kasir", "shopping-cart", penjualanShortcuts())
+      @shortcutSection("Mutasi Stok", "truck", mutasiShortcuts())
+      @shortcutTips()
+    </div>
+  }
+}
+
+templ shortcutSection(title, iconName string, items []Shortcut) {
+  @components.Card(components.CardProps{}) {
+    <div class="flex items-center gap-2 mb-4">
+      <span class="text-brand-600">@icon.Render(iconName, 18, "")</span>
+      <h3 class="text-base font-semibold text-slate-900">{ title }</h3>
+    </div>
+    <table class="w-full text-sm">
+      <tbody class="divide-y divide-slate-100">
+        for _, s := range items {
+          <tr>
+            <td class="py-2 pr-4 align-top w-32">
+              <div class="flex items-center gap-1 flex-wrap">
+                for _, k := range s.Keys {
+                  <kbd class="inline-flex items-center px-2 py-0.5 text-xs font-mono font-semibold text-slate-700 bg-slate-100 border border-slate-300 rounded">
+                    { k }
+                  </kbd>
+                }
+              </div>
+            </td>
+            <td class="py-2 text-slate-700">{ s.Action }</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+}
+
+templ shortcutTips() {
+  @components.Card(components.CardProps{ Title: "Tips" }) {
+    <ul class="text-sm text-slate-600 space-y-2">
+      <li class="flex items-start gap-2">
+        <span class="text-brand-500 mt-0.5">@icon.Info(14, "")</span>
+        <span>Form penjualan dirancang full-keyboard. Hindari mouse untuk transaksi cepat.</span>
+      </li>
+      <li class="flex items-start gap-2">
+        <span class="text-brand-500 mt-0.5">@icon.Info(14, "")</span>
+        <span>Tombol F-key kadang ditangkap browser. Gunakan Fn+F2/F3/dst pada laptop tertentu.</span>
+      </li>
+      <li class="flex items-start gap-2">
+        <span class="text-brand-500 mt-0.5">@icon.Info(14, "")</span>
+        <span>Shortcut hanya aktif saat fokus tidak berada di kolom teks (kecuali Enter dan Esc).</span>
+      </li>
+    </ul>
+  }
+}

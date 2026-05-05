@@ -1,0 +1,223 @@
+package mitra
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Index(p IndexProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Mitra",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Mitra" },
+    },
+  }) {
+    @components.PageHeader("Mitra", "Daftar pelanggan eceran, grosir, dan proyek.") {
+      @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Href: "/mitra/baru" }) {
+        @icon.Plus(16, "")
+        <span>Tambah Mitra</span>
+      }
+    }
+
+    if p.FlashSuccess != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "success", Message: p.FlashSuccess })
+      </div>
+    }
+
+    @components.Card(components.CardProps{ NoPad: true, Class: "overflow-hidden" }) {
+      <form method="get" action="/mitra" class="p-4 border-b border-slate-100 grid grid-cols-1 md:grid-cols-12 gap-3">
+        <div class="md:col-span-5">
+          @components.Input(components.InputProps{
+            ID: "q", Name: "q", Type: "search", Value: p.Query,
+            Placeholder: "Cari nama atau kode mitra...",
+            Prefix: "",
+          })
+        </div>
+        <div class="md:col-span-3">
+          <select name="tipe" class="input">
+            <option value="" selected?={ p.Tipe == "" }>Semua tipe</option>
+            <option value="eceran" selected?={ p.Tipe == "eceran" }>Eceran</option>
+            <option value="grosir" selected?={ p.Tipe == "grosir" }>Grosir</option>
+            <option value="proyek" selected?={ p.Tipe == "proyek" }>Proyek</option>
+          </select>
+        </div>
+        <div class="md:col-span-2">
+          <select name="status" class="input">
+            <option value="" selected?={ p.IsActive == nil }>Semua status</option>
+            <option value="aktif" selected?={ BoolPtrEq(p.IsActive, true) }>Aktif</option>
+            <option value="nonaktif" selected?={ BoolPtrEq(p.IsActive, false) }>Nonaktif</option>
+          </select>
+        </div>
+        <div class="md:col-span-2 flex gap-2">
+          @components.Button(components.ButtonProps{ Variant: "secondary", Type: "submit", Size: "md", Class: "w-full" }) {
+            @icon.Filter(14, "")
+            <span>Filter</span>
+          }
+        </div>
+      </form>
+
+      if len(p.Items) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "users",
+          Title: "Belum ada mitra",
+          Description: "Tambahkan mitra baru untuk memulai pencatatan penjualan.",
+        }) {
+          @components.Button(components.ButtonProps{ Variant: "primary", Size: "sm", Href: "/mitra/baru" }) {
+            @icon.Plus(14, "")
+            <span>Tambah Mitra</span>
+          }
+        }
+      } else {
+        <div x-data="bulkSelect()" class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+          <table class="w-full text-sm">
+            <thead class="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-sm">
+              <tr>
+                <th class="px-3 py-2.5 w-8">
+                  <input type="checkbox" :checked="isAll()" @change="toggleAll($event)"
+                         class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+                </th>
+                <th class="text-left font-medium px-4 py-2.5">Kode</th>
+                <th class="text-left font-medium px-4 py-2.5">Nama</th>
+                <th class="text-left font-medium px-4 py-2.5">Tipe</th>
+                <th class="text-right font-medium px-4 py-2.5">Limit Kredit</th>
+                <th class="text-right font-medium px-4 py-2.5">Tempo</th>
+                <th class="text-left font-medium px-4 py-2.5">Status</th>
+                <th class="text-right font-medium px-4 py-2.5">Aksi</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              for _, m := range p.Items {
+                @rowMitra(m, p.CSRFToken)
+              }
+            </tbody>
+          </table>
+          @components.BulkActionBar(components.BulkActionBarProps{
+            FormName: "ids", DeleteURL: "/mitra/bulk/delete", ItemLabel: "mitra",
+          })
+        </div>
+
+        @components.Pagination(components.PaginationProps{
+          Page: p.Page, PerPage: p.PerPage, Total: p.Total, TotalPages: p.TotalPages,
+          BaseURL: "/mitra", QueryStr: mitraQueryStr(p),
+        })
+      }
+    }
+  }
+}
+
+// mitraQueryStr build query string preserving filter aktif.
+func mitraQueryStr(p IndexProps) string {
+  parts := make([]string, 0, 3)
+  if p.Query != "" {
+    parts = append(parts, "q="+urlEscape(p.Query))
+  }
+  if p.Tipe != "" {
+    parts = append(parts, "tipe="+urlEscape(p.Tipe))
+  }
+  if p.IsActive != nil {
+    if *p.IsActive {
+      parts = append(parts, "status=aktif")
+    } else {
+      parts = append(parts, "status=nonaktif")
+    }
+  }
+  // join manual untuk hindari import strings.
+  out := ""
+  for i, s := range parts {
+    if i > 0 {
+      out += "&"
+    }
+    out += s
+  }
+  return out
+}
+
+templ rowMitra(m domain.Mitra, csrfToken string) {
+  <tr class="hover:bg-slate-50" data-id={ strconv.FormatInt(m.ID, 10) }>
+    <td class="px-3 py-2.5 w-8">
+      <input type="checkbox" :value={ strconv.FormatInt(m.ID, 10) } x-model="selected"
+             class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+    </td>
+    <td class="px-4 py-2.5 font-mono text-xs text-slate-700">{ m.Kode }</td>
+    <td class="px-4 py-2.5">
+      <a href={ templ.SafeURL(fmt.Sprintf("/mitra/%d", m.ID)) } class="font-medium text-slate-900 hover:text-brand-600">
+        { m.Nama }
+      </a>
+      if m.Kontak != nil && *m.Kontak != "" {
+        <div class="text-xs text-slate-500 mt-0.5">{ *m.Kontak }</div>
+      }
+    </td>
+    <td class="px-4 py-2.5">
+      @components.Badge(TipeLabel(m.Tipe), TipeBadgeVariant(m.Tipe))
+    </td>
+    <td class="px-4 py-2.5 text-right tabular-nums whitespace-nowrap num text-slate-700">
+      if m.LimitKredit > 0 {
+        { format.Rupiah(m.LimitKredit) }
+      } else {
+        <span class="text-slate-500">—</span>
+      }
+    </td>
+    <td class="px-4 py-2.5 text-right tabular-nums text-slate-700">{ strconv.Itoa(m.JatuhTempoHari) } hari</td>
+    <td class="px-4 py-2.5">
+      if m.IsActive {
+        @components.BadgeWithDot("Aktif", "success")
+      } else {
+        @components.BadgeWithDot("Nonaktif", "default")
+      }
+    </td>
+    <td class="px-4 py-2.5 text-right">
+      <div class="inline-flex items-center gap-1">
+        <a href={ templ.SafeURL(fmt.Sprintf("/mitra/%d/edit", m.ID)) }
+           class="inline-flex items-center justify-center h-8 w-8 rounded-md text-slate-500 hover:text-brand-600 hover:bg-slate-100"
+           aria-label="Edit">
+          @icon.Pencil(14, "")
+        </a>
+        @components.ConfirmForm(components.ConfirmFormProps{
+          Action:      fmt.Sprintf("/mitra/%d/delete", m.ID),
+          Title:       "Hapus Mitra",
+          Message:     "Hapus mitra ini? Aksi ini tidak bisa dibatalkan.",
+          ConfirmText: "Hapus",
+          Variant:     "danger",
+          IconName:    "trash",
+          AriaLabel:   "Hapus mitra",
+          CSRFToken:   csrfToken,
+        })
+      </div>
+    </td>
+  </tr>
+}
+
+templ paginationBar(p IndexProps) {
+  <div class="px-4 py-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+    <div>
+      Menampilkan <span class="font-medium text-slate-700">{ strconv.Itoa(len(p.Items)) }</span>
+      dari <span class="font-medium text-slate-700">{ strconv.Itoa(p.Total) }</span> mitra
+    </div>
+    if p.TotalPages > 1 {
+      <div class="flex items-center gap-1">
+        if p.Page > 1 {
+          <a href={ templ.SafeURL(pageURL(p, p.Page-1)) }
+             class="inline-flex items-center px-2 py-1 rounded-md hover:bg-slate-100">
+            @icon.ChevronLeft(14, "")
+          </a>
+        }
+        <span class="px-2">Halaman { strconv.Itoa(p.Page) } / { strconv.Itoa(p.TotalPages) }</span>
+        if p.Page < p.TotalPages {
+          <a href={ templ.SafeURL(pageURL(p, p.Page+1)) }
+             class="inline-flex items-center px-2 py-1 rounded-md hover:bg-slate-100">
+            @icon.ChevronRight(14, "")
+          </a>
+        }
+      </div>
+    }
+  </div>
+}

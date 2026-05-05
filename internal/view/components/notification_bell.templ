@@ -1,0 +1,134 @@
+package components
+
+import "github.com/omanjaya/tokobangunan/internal/view/icon"
+
+// NotificationItem satu baris notifikasi.
+// Variant: "danger" (stok kritis), "warning" (jatuh tempo), "info" (mutasi).
+type NotificationItem struct {
+  Variant string
+  Title   string
+  Detail  string
+  Href    string
+  Time    string // optional relative time
+}
+
+// NotificationBellProps state awal bell (dipakai topbar render).
+// JS akan refresh count tiap 60 detik via /notifications/count.
+type NotificationBellProps struct {
+  InitialCount int
+}
+
+// NotificationBell render bell icon + badge + dropdown.
+// Dropdown body di-fetch via HTMX saat user klik bell.
+templ NotificationBell(p NotificationBellProps) {
+  <div x-data="notifCount()" class="relative" @click.outside="open = false">
+    <button type="button"
+            class="relative inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            aria-label="Notifikasi"
+            title="Notifikasi"
+            hx-get="/notifications"
+            hx-target="#notif-dropdown"
+            hx-trigger="click"
+            hx-swap="innerHTML"
+            @click="open = !open">
+      @icon.Bell(18, "")
+      <span x-show="count > 0" x-cloak
+            class="notif-badge"
+            x-text="count > 99 ? '99+' : count"></span>
+    </button>
+    <div x-show="open" x-cloak x-transition
+         id="notif-dropdown"
+         class="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg z-30">
+      <div class="px-4 py-6 text-center text-sm text-slate-500">Memuat...</div>
+    </div>
+  </div>
+}
+
+// NotificationDropdown render isi dropdown (server partial).
+templ NotificationDropdown(items []NotificationItem) {
+  <div class="divide-y divide-slate-100">
+    <div class="px-4 py-2.5 flex items-center justify-between bg-slate-50">
+      <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Notifikasi</span>
+      <span class="text-xs text-slate-500">{ countLabel(len(items)) }</span>
+    </div>
+    if len(items) == 0 {
+      <div class="px-4 py-8 text-center">
+        <div class="inline-flex text-slate-300 mb-2">
+          @icon.Bell(28, "")
+        </div>
+        <div class="text-sm font-medium text-slate-900">Tidak ada notifikasi</div>
+        <div class="text-xs text-slate-500 mt-0.5">Semua aman, tidak ada yang perlu ditinjau.</div>
+      </div>
+    } else {
+      for _, it := range items {
+        <a href={ templ.SafeURL(it.Href) }
+           class="flex items-start gap-3 px-4 py-3 hover:bg-slate-50">
+          <span class={ "mt-0.5 shrink-0", notifIconColor(it.Variant) }>
+            @icon.Render(notifIconName(it.Variant), 16, "")
+          </span>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium text-slate-900 truncate" title={ it.Title }>{ it.Title }</div>
+            if it.Detail != "" {
+              <div class="text-xs text-slate-500 mt-0.5 line-clamp-2">{ it.Detail }</div>
+            }
+            if it.Time != "" {
+              <div class="text-xs text-slate-500 mt-0.5">{ it.Time }</div>
+            }
+          </div>
+        </a>
+      }
+    }
+  </div>
+}
+
+func notifIconName(variant string) string {
+  switch variant {
+  case "danger":
+    return "alert-triangle"
+  case "warning":
+    return "clock"
+  case "info":
+    return "truck"
+  default:
+    return "info"
+  }
+}
+
+func notifIconColor(variant string) string {
+  switch variant {
+  case "danger":
+    return "text-rose-500"
+  case "warning":
+    return "text-amber-500"
+  case "info":
+    return "text-sky-500"
+  default:
+    return "text-slate-500"
+  }
+}
+
+func countLabel(n int) string {
+  if n == 0 {
+    return ""
+  }
+  if n == 1 {
+    return "1 item"
+  }
+  return formatCount(n) + " item"
+}
+
+func formatCount(n int) string {
+  if n < 0 {
+    return "0"
+  }
+  // simple int → string tanpa import strconv di file templ.
+  if n == 0 {
+    return "0"
+  }
+  digits := []byte{}
+  for n > 0 {
+    digits = append([]byte{byte('0' + n%10)}, digits...)
+    n /= 10
+  }
+  return string(digits)
+}

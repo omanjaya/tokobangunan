@@ -1,0 +1,93 @@
+package auditview
+
+import (
+	"strconv"
+
+	"github.com/omanjaya/tokobangunan/internal/domain"
+	"github.com/omanjaya/tokobangunan/internal/view/components"
+	"github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+type ShowProps struct {
+	Nav  layout.NavData
+	User layout.UserData
+	Log  *domain.AuditLog
+}
+
+templ Show(p ShowProps) {
+	@layout.AppShell(layout.AppShellProps{
+		Title: "Detail Audit Log",
+		Nav:   p.Nav,
+		User:  p.User,
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Label: "Setting", Href: "/setting"},
+			{Label: "Audit Log", Href: "/setting/audit-log"},
+			{Label: "#" + strconv.FormatInt(p.Log.ID, 10)},
+		},
+	}) {
+		@components.PageHeader("Audit Log #"+strconv.FormatInt(p.Log.ID, 10), p.Log.CreatedAt.Format("02 Jan 2006 15:04:05")) {
+			<a href="/setting/audit-log" class="btn-ghost btn-md">Kembali</a>
+		}
+
+		<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+			<div class="lg:col-span-1">
+				@components.Card(components.CardProps{Title: "Info"}) {
+					<dl class="text-sm space-y-2">
+						<div class="flex justify-between">
+							<dt class="text-slate-500">Waktu</dt>
+							<dd class="font-medium">{ p.Log.CreatedAt.Format("02 Jan 2006 15:04:05") }</dd>
+						</div>
+						<div class="flex justify-between">
+							<dt class="text-slate-500">User</dt>
+							<dd class="font-medium">{ p.Log.UserNama }</dd>
+						</div>
+						<div class="flex justify-between">
+							<dt class="text-slate-500">Username</dt>
+							<dd class="font-mono text-slate-700">{ p.Log.UserUsername }</dd>
+						</div>
+						<div class="flex justify-between">
+							<dt class="text-slate-500">Aksi</dt>
+							<dd>
+								@components.Badge(p.Log.Aksi, AksiBadgeVariant(p.Log.Aksi))
+							</dd>
+						</div>
+						<div class="flex justify-between">
+							<dt class="text-slate-500">Tabel</dt>
+							<dd class="font-mono">{ p.Log.Tabel }</dd>
+						</div>
+						<div class="flex justify-between">
+							<dt class="text-slate-500">Record ID</dt>
+							<dd class="font-mono">{ strconv.FormatInt(p.Log.RecordID, 10) }</dd>
+						</div>
+						if p.Log.IP != "" {
+							<div class="flex justify-between">
+								<dt class="text-slate-500">IP</dt>
+								<dd class="font-mono text-xs">{ p.Log.IP }</dd>
+							</div>
+						}
+					</dl>
+				}
+			</div>
+
+			<div class="lg:col-span-2 space-y-4">
+				if p.Log.PayloadBefore != nil {
+					@components.Card(components.CardProps{Title: "Sebelum"}) {
+						<pre class="text-xs font-mono bg-slate-50 p-3 rounded overflow-x-auto whitespace-pre-wrap">{ string(*p.Log.PayloadBefore) }</pre>
+					}
+				}
+				if p.Log.PayloadAfter != nil {
+					@components.Card(components.CardProps{Title: "Sesudah"}) {
+						<pre class="text-xs font-mono bg-slate-50 p-3 rounded overflow-x-auto whitespace-pre-wrap">{ string(*p.Log.PayloadAfter) }</pre>
+					}
+				}
+				if p.Log.PayloadBefore == nil && p.Log.PayloadAfter == nil {
+					@components.EmptyState(components.EmptyStateProps{
+						IconName:    "info",
+						Title:       "Tidak ada payload",
+						Description: "Audit log ini tidak menyimpan snapshot data.",
+					})
+				}
+			</div>
+		</div>
+	}
+}

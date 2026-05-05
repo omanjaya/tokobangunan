@@ -1,0 +1,217 @@
+package userview
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/service"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// IndexProps - daftar user.
+type IndexProps struct {
+  Nav       layout.NavData
+  User      layout.UserData
+  Result    service.PageResult[domain.UserAccount]
+  Query     string
+  Role      string
+  Gudangs   []domain.Gudang
+  CSRFToken string
+}
+
+templ Index(p IndexProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "User Management",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Pengaturan", Href: "/setting" },
+      { Label: "User" },
+    },
+  }) {
+    @components.PageHeader("User Management", "Akun pengguna sistem.") {
+      @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Href: "/setting/user/baru" }) {
+        @icon.Plus(16, "")
+        <span>Tambah User</span>
+      }
+    }
+
+    @userFilter(p)
+
+    @components.Card(components.CardProps{ NoPad: true }) {
+      if len(p.Result.Items) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "users",
+          Title: "Belum ada user",
+          Description: "Klik 'Tambah User' untuk membuat akun pengguna baru.",
+        })
+      } else {
+        @userTable(p)
+        @paginationFooter(p)
+      }
+    }
+  }
+}
+
+templ userFilter(p IndexProps) {
+  <form method="get" action="/setting/user" class="flex flex-wrap items-end gap-3 mb-4">
+    <div class="flex-1 min-w-64">
+      @components.FormField(components.FormFieldProps{ ID: "q", Label: "Cari" }) {
+        @components.Input(components.InputProps{
+          ID: "q", Name: "q", Type: "search", Value: p.Query,
+          Placeholder: "Cari username atau nama...",
+        })
+      }
+    </div>
+    <div class="w-48">
+      @components.FormField(components.FormFieldProps{ ID: "role", Label: "Role" }) {
+        <select id="role" name="role" class="input">
+          <option value="">Semua role</option>
+          for _, r := range RolesAll() {
+            if r.Value == p.Role {
+              <option value={ r.Value } selected>{ r.Label }</option>
+            } else {
+              <option value={ r.Value }>{ r.Label }</option>
+            }
+          }
+        </select>
+      }
+    </div>
+    <button type="submit" class="btn-secondary btn-md">
+      @icon.Filter(14, "")
+      <span>Terapkan</span>
+    </button>
+  </form>
+}
+
+templ userTable(p IndexProps) {
+  <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-sm">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Username</th>
+          <th class="px-4 py-3 text-left font-medium">Nama Lengkap</th>
+          <th class="px-4 py-3 text-left font-medium">Role</th>
+          <th class="px-4 py-3 text-left font-medium">Gudang</th>
+          <th class="px-4 py-3 text-left font-medium">Login Terakhir</th>
+          <th class="px-4 py-3 text-left font-medium">Status</th>
+          <th class="px-4 py-3 text-right font-medium">Aksi</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 bg-white">
+        for _, u := range p.Result.Items {
+          @rowUser(u, p)
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+templ rowUser(u domain.UserAccount, p IndexProps) {
+  <tr>
+    <td class="px-4 py-3 font-mono text-slate-900">{ u.Username }</td>
+    <td class="px-4 py-3 font-medium text-slate-900">{ u.NamaLengkap }</td>
+    <td class="px-4 py-3">
+      @components.Badge(RoleLabel(u.Role), RoleBadgeVariant(u.Role))
+    </td>
+    <td class="px-4 py-3 text-slate-600">{ GudangNameByID(p.Gudangs, u.GudangID) }</td>
+    <td class="px-4 py-3 text-slate-600">{ TimeOrDash(u.LastLoginAt) }</td>
+    <td class="px-4 py-3">
+      if u.IsActive {
+        @components.BadgeWithDot("Aktif", "success")
+      } else {
+        @components.BadgeWithDot("Non-aktif", "default")
+      }
+    </td>
+    <td class="px-4 py-3 text-right">
+      <div class="inline-flex items-center gap-2">
+        @components.Button(components.ButtonProps{
+          Variant: "secondary", Size: "sm",
+          Href: "/setting/user/" + idToStr(u.ID) + "/edit",
+        }) {
+          @icon.Pencil(14, "")
+          <span>Edit</span>
+        }
+        @resetPasswordForm(u, p.CSRFToken)
+        @toggleActiveForm(u, p.CSRFToken)
+      </div>
+    </td>
+  </tr>
+}
+
+templ resetPasswordForm(u domain.UserAccount, csrf string) {
+  @components.ConfirmForm(components.ConfirmFormProps{
+    Action:      "/setting/user/" + idToStr(u.ID) + "/reset-password",
+    Title:       "Reset Password",
+    Message:     "Reset password user ini? Password baru akan dibuat dan ditampilkan satu kali.",
+    ConfirmText: "Reset",
+    Variant:     "primary",
+    Trigger:     "Reset",
+    TriggerVar:  "ghost",
+    CSRFToken:   csrf,
+  })
+}
+
+templ toggleActiveForm(u domain.UserAccount, csrf string) {
+  if u.IsActive {
+    @components.ConfirmForm(components.ConfirmFormProps{
+      Action:      "/setting/user/" + idToStr(u.ID) + "/toggle-active",
+      Title:       "Non-aktifkan User",
+      Message:     "Non-aktifkan user " + u.Username + "? User tidak bisa login sampai diaktifkan kembali.",
+      ConfirmText: "Non-aktifkan",
+      Variant:     "danger",
+      IconName:    "x",
+      AriaLabel:   "Non-aktifkan user",
+      CSRFToken:   csrf,
+    })
+  } else {
+    <form method="post" action={ templ.SafeURL("/setting/user/" + idToStr(u.ID) + "/toggle-active") } class="inline">
+      <input type="hidden" name="csrf_token" value={ csrf }/>
+      <button type="submit" class="btn-ghost btn-sm" title="Aktifkan">
+        @icon.Check(14, "")
+      </button>
+    </form>
+  }
+}
+
+templ paginationFooter(p IndexProps) {
+  <div class="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm text-slate-600">
+    <div>
+      { fmt.Sprintf("Total %d user · halaman %d dari %d", p.Result.Total, p.Result.Page, p.Result.TotalPages) }
+    </div>
+    <div class="flex items-center gap-2">
+      if p.Result.Page > 1 {
+        @components.Button(components.ButtonProps{
+          Variant: "secondary", Size: "sm",
+          Href: pageURL(p, p.Result.Page-1),
+        }) {
+          @icon.ChevronLeft(14, "")
+          <span>Sebelumnya</span>
+        }
+      }
+      if p.Result.Page < p.Result.TotalPages {
+        @components.Button(components.ButtonProps{
+          Variant: "secondary", Size: "sm",
+          Href: pageURL(p, p.Result.Page+1),
+        }) {
+          <span>Berikutnya</span>
+          @icon.ChevronRight(14, "")
+        }
+      }
+    </div>
+  </div>
+}
+
+func pageURL(p IndexProps, page int) string {
+  u := "/setting/user?page=" + strconv.Itoa(page)
+  if p.Query != "" {
+    u += "&q=" + p.Query
+  }
+  if p.Role != "" {
+    u += "&role=" + p.Role
+  }
+  return u
+}

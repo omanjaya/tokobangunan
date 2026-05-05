@@ -1,0 +1,45 @@
+package onboarding
+
+import "github.com/omanjaya/tokobangunan/internal/view/components"
+
+// wizardLayout - kerangka halaman wizard onboarding.
+templ wizardLayout(title string, steps []WizardStep) {
+  <!DOCTYPE html>
+  <html lang="id">
+    <head>
+      <meta charset="utf-8"/>
+      <meta name="viewport" content="width=device-width, initial-scale=1"/>
+      <title>{ title } - Tokobangunan</title>
+      <link rel="stylesheet" href="/static/css/app.css"/>
+      <script src="/static/js/htmx.min.js" defer></script>
+      <script src="/static/js/alpine.min.js" defer></script>
+    </head>
+    <body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
+      <main class="min-h-screen px-4 py-8">
+        <div class="max-w-3xl mx-auto">
+          <div class="mb-6">
+            <h1 class="text-2xl font-semibold tracking-tight text-slate-900 mb-1">Setup Awal Toko</h1>
+            <p class="text-sm text-slate-500">Beberapa langkah untuk menyiapkan aplikasi.</p>
+          </div>
+          <div class="card p-4 mb-4">
+            @stepperFrom(steps)
+          </div>
+          { children... }
+        </div>
+      </main>
+    </body>
+  </html>
+}
+
+templ stepperFrom(steps []WizardStep) {
+  {{ converted := convertSteps(steps) }}
+  @components.Stepper(converted)
+}
+
+func convertSteps(in []WizardStep) []components.Step {
+  out := make([]components.Step, len(in))
+  for i, s := range in {
+    out[i] = components.Step{Label: s.Label, Active: s.Active, Done: s.Done}
+  }
+  return out
+}

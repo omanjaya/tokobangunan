@@ -1,0 +1,158 @@
+package supplier
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Index(p IndexProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Supplier",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Supplier" },
+    },
+  }) {
+    @components.PageHeader("Supplier", "Daftar pemasok / vendor toko.") {
+      @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Href: "/supplier/baru" }) {
+        @icon.Plus(16, "")
+        <span>Tambah Supplier</span>
+      }
+    }
+
+    if p.FlashSuccess != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "success", Message: p.FlashSuccess })
+      </div>
+    }
+
+    @components.Card(components.CardProps{ NoPad: true, Class: "overflow-hidden" }) {
+      <form method="get" action="/supplier" class="p-4 border-b border-slate-100 grid grid-cols-1 md:grid-cols-12 gap-3">
+        <div class="md:col-span-7">
+          @components.Input(components.InputProps{
+            ID: "q", Name: "q", Type: "search", Value: p.Query,
+            Placeholder: "Cari nama atau kode supplier...",
+          })
+        </div>
+        <div class="md:col-span-3">
+          <select name="status" class="input">
+            <option value="" selected?={ p.IsActive == nil }>Semua status</option>
+            <option value="aktif" selected?={ BoolPtrEq(p.IsActive, true) }>Aktif</option>
+            <option value="nonaktif" selected?={ BoolPtrEq(p.IsActive, false) }>Nonaktif</option>
+          </select>
+        </div>
+        <div class="md:col-span-2 flex gap-2">
+          @components.Button(components.ButtonProps{ Variant: "secondary", Type: "submit", Size: "md", Class: "w-full" }) {
+            @icon.Filter(14, "")
+            <span>Filter</span>
+          }
+        </div>
+      </form>
+
+      if len(p.Items) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "briefcase",
+          Title: "Belum ada supplier",
+          Description: "Tambahkan supplier untuk mulai mencatat pembelian.",
+        }) {
+          @components.Button(components.ButtonProps{ Variant: "primary", Size: "sm", Href: "/supplier/baru" }) {
+            @icon.Plus(14, "")
+            <span>Tambah Supplier</span>
+          }
+        }
+      } else {
+        <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+          <table class="w-full text-sm">
+            <thead class="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-sm">
+              <tr>
+                <th class="text-left font-medium px-4 py-2.5">Kode</th>
+                <th class="text-left font-medium px-4 py-2.5">Nama</th>
+                <th class="text-left font-medium px-4 py-2.5">Kontak</th>
+                <th class="text-left font-medium px-4 py-2.5">Status</th>
+                <th class="text-right font-medium px-4 py-2.5">Aksi</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              for _, s := range p.Items {
+                @rowSupplier(s, p.CSRFToken)
+              }
+            </tbody>
+          </table>
+        </div>
+
+        @paginationBar(p)
+      }
+    }
+  }
+}
+
+templ rowSupplier(s domain.Supplier, csrf string) {
+  <tr class="hover:bg-slate-50">
+    <td class="px-4 py-2.5 font-mono text-xs text-slate-700">{ s.Kode }</td>
+    <td class="px-4 py-2.5">
+      <div class="font-medium text-slate-900" title={ s.Nama }>{ s.Nama }</div>
+      if s.Alamat != nil && *s.Alamat != "" {
+        <div class="text-xs text-slate-500 mt-0.5 truncate max-w-md" title={ *s.Alamat }>{ *s.Alamat }</div>
+      }
+    </td>
+    <td class="px-4 py-2.5 text-slate-700">{ StringOrDash(s.Kontak) }</td>
+    <td class="px-4 py-2.5">
+      if s.IsActive {
+        @components.BadgeWithDot("Aktif", "success")
+      } else {
+        @components.BadgeWithDot("Nonaktif", "default")
+      }
+    </td>
+    <td class="px-4 py-2.5 text-right">
+      <div class="inline-flex items-center gap-1">
+        <a href={ templ.SafeURL(fmt.Sprintf("/supplier/%d/edit", s.ID)) }
+           class="inline-flex items-center justify-center h-8 w-8 rounded-md text-slate-500 hover:text-brand-600 hover:bg-slate-100"
+           aria-label="Edit">
+          @icon.Pencil(14, "")
+        </a>
+        @components.ConfirmForm(components.ConfirmFormProps{
+          Action:      fmt.Sprintf("/supplier/%d/delete", s.ID),
+          Title:       "Hapus Supplier",
+          Message:     "Hapus supplier ini? Aksi ini tidak bisa dibatalkan.",
+          ConfirmText: "Hapus",
+          Variant:     "danger",
+          IconName:    "trash",
+          AriaLabel:   "Hapus supplier",
+          CSRFToken:   csrf,
+        })
+      </div>
+    </td>
+  </tr>
+}
+
+templ paginationBar(p IndexProps) {
+  <div class="px-4 py-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+    <div>
+      Menampilkan <span class="font-medium text-slate-700">{ strconv.Itoa(len(p.Items)) }</span>
+      dari <span class="font-medium text-slate-700">{ strconv.Itoa(p.Total) }</span> supplier
+    </div>
+    if p.TotalPages > 1 {
+      <div class="flex items-center gap-1">
+        if p.Page > 1 {
+          <a href={ templ.SafeURL(pageURL(p, p.Page-1)) }
+             class="inline-flex items-center px-2 py-1 rounded-md hover:bg-slate-100">
+            @icon.ChevronLeft(14, "")
+          </a>
+        }
+        <span class="px-2">Halaman { strconv.Itoa(p.Page) } / { strconv.Itoa(p.TotalPages) }</span>
+        if p.Page < p.TotalPages {
+          <a href={ templ.SafeURL(pageURL(p, p.Page+1)) }
+             class="inline-flex items-center px-2 py-1 rounded-md hover:bg-slate-100">
+            @icon.ChevronRight(14, "")
+          </a>
+        }
+      </div>
+    }
+  </div>
+}

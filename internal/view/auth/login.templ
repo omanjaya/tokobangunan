@@ -1,0 +1,113 @@
+package auth
+
+import (
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// LoginProps - data render halaman login.
+// Error: pesan error global (mis. "Username atau password salah").
+// Username: nilai yang sebelumnya diisi user (untuk preserve setelah error).
+// CSRFToken: token form (handler yang inject).
+type LoginProps struct {
+  Error     string
+  Username  string
+  CSRFToken string
+}
+
+templ Login(p LoginProps) {
+  @layout.AuthLayout(layout.AuthLayoutProps{ Title: "Masuk" }) {
+    <div class="text-center mb-8">
+      <div class="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-600 text-white font-mono font-semibold mb-4 shadow-sm">
+        TB
+      </div>
+      <h1 class="text-2xl font-semibold tracking-tight text-slate-900">Tokobangunan</h1>
+      <p class="text-sm text-slate-500 mt-1.5">Masuk untuk melanjutkan ke dashboard</p>
+    </div>
+
+    <div class="card rounded-2xl p-6 shadow-sm">
+      if p.Error != "" {
+        <div class="mb-4">
+          @components.Alert(components.AlertProps{ Variant: "danger", Message: p.Error })
+        </div>
+      }
+
+      <form
+        id="login-form"
+        method="post"
+        action="/login"
+        hx-post="/login"
+        hx-target="#login-form"
+        hx-swap="outerHTML"
+        class="space-y-4"
+      >
+        if p.CSRFToken != "" {
+          <input type="hidden" name="csrf_token" value={ p.CSRFToken }/>
+        }
+
+        @components.FormField(components.FormFieldProps{
+          ID: "username", Label: "Username", Required: true,
+        }) {
+          @components.Input(components.InputProps{
+            ID: "username",
+            Name: "username",
+            Type: "text",
+            Value: p.Username,
+            Placeholder: "Masukkan username",
+            Autocomplete: "username",
+            Required: true,
+            Attrs: templ.Attributes{ "autofocus": true },
+          })
+        }
+
+        @components.FormField(components.FormFieldProps{
+          ID: "password", Label: "Password", Required: true,
+        }) {
+          <div x-data="{ show: false }" class="relative">
+            <input
+              x-bind:type="show ? 'text' : 'password'"
+              id="password"
+              name="password"
+              autocomplete="current-password"
+              required
+              placeholder="Masukkan password"
+              class="input pr-10"
+            />
+            <button
+              type="button"
+              @click="show = !show"
+              class="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 hover:text-slate-700"
+              x-bind:aria-label="show ? 'Sembunyikan password' : 'Tampilkan password'"
+              tabindex="-1"
+            >
+              <span x-show="!show">
+                @icon.Eye(16, "")
+              </span>
+              <span x-show="show" x-cloak>
+                @icon.EyeOff(16, "")
+              </span>
+            </button>
+          </div>
+        }
+
+        <div class="flex items-center justify-between text-xs">
+          <label class="inline-flex items-center gap-2 text-slate-600">
+            <input type="checkbox" name="remember" value="1" class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+            <span>Ingat saya</span>
+          </label>
+          <a href="/lupa-password" class="text-brand-700 hover:text-brand-800 font-medium">Lupa password?</a>
+        </div>
+
+        <button type="submit" class="btn-primary btn-lg w-full">
+          @icon.Lock(16, "")
+          <span>Masuk</span>
+        </button>
+      </form>
+    </div>
+
+    <p class="text-center text-xs text-slate-500 mt-6">
+      Tokobangunan &middot; Sistem Internal
+    </p>
+  }
+}

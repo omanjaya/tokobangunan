@@ -1,0 +1,151 @@
+package opname
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Show(p ShowProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Detail Opname",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Stok" },
+      { Label: "Opname", Href: "/opname" },
+      { Label: p.Opname.Nomor },
+    },
+  }) {
+    @components.PageHeader("Detail Opname", p.Opname.Nomor) {
+      @actionsForStatus(p)
+    }
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+      @components.Card(components.CardProps{ Title: "Informasi" }) {
+        <dl class="text-sm space-y-2">
+          <div class="flex justify-between">
+            <dt class="text-slate-500">Tanggal</dt>
+            <dd>{ p.Opname.Tanggal.Format("02 Jan 2006") }</dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-slate-500">Gudang</dt>
+            <dd class="font-medium">{ p.Opname.GudangNama }</dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-slate-500">User</dt>
+            <dd>{ p.Opname.UserNama }</dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-slate-500">Status</dt>
+            <dd>
+              @StatusBadge(string(p.Opname.Status))
+            </dd>
+          </div>
+          if p.Opname.Catatan != "" {
+            <div>
+              <dt class="text-slate-500 mb-1">Catatan</dt>
+              <dd class="text-slate-700">{ p.Opname.Catatan }</dd>
+            </div>
+          }
+        </dl>
+      }
+      @components.Card(components.CardProps{ Title: "Ringkasan", Class: "lg:col-span-2" }) {
+        <dl class="grid grid-cols-3 gap-4 text-sm">
+          <div>
+            <dt class="text-slate-500">Total Item</dt>
+            <dd class="text-2xl font-semibold mt-1">{ strconv.Itoa(len(p.Opname.Items)) }</dd>
+          </div>
+          <div>
+            <dt class="text-slate-500">Selisih +</dt>
+            <dd class="text-2xl font-semibold mt-1 text-emerald-600">{ countPositiveSelisih(p.Opname.Items) }</dd>
+          </div>
+          <div>
+            <dt class="text-slate-500">Selisih −</dt>
+            <dd class="text-2xl font-semibold mt-1 text-rose-600">{ countNegativeSelisih(p.Opname.Items) }</dd>
+          </div>
+        </dl>
+      }
+    </div>
+
+    @components.Card(components.CardProps{ Title: "Item Opname", NoPad: true }) {
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+          <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+            <tr>
+              <th class="px-3 py-2 text-left">Produk</th>
+              <th class="px-3 py-2 text-right">Qty Sistem</th>
+              <th class="px-3 py-2 text-right">Qty Fisik</th>
+              <th class="px-3 py-2 text-right">Selisih</th>
+              <th class="px-3 py-2 text-left">Keterangan</th>
+              if p.Opname.Status == domain.OpnameDraft {
+                <th class="px-3 py-2"></th>
+              }
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            for _, it := range p.Opname.Items {
+              @itemRow(p, it)
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+}
+
+templ actionsForStatus(p ShowProps) {
+  switch p.Opname.Status {
+    case domain.OpnameDraft:
+      <form method="post" action={ templ.SafeURL(fmt.Sprintf("/opname/%d/submit", p.Opname.ID)) }
+            onsubmit="return confirm('Submit opname? Setelah ini item tidak bisa diubah.')">
+        @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+          @icon.Check(16, "")
+          <span>Submit (Selesai)</span>
+        }
+      </form>
+    case domain.OpnameSelesai:
+      <form method="post" action={ templ.SafeURL(fmt.Sprintf("/opname/%d/approve", p.Opname.ID)) }
+            onsubmit="return confirm('Approve opname? Stok akan disesuaikan dengan qty fisik.')">
+        @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+          @icon.Check(16, "")
+          <span>Approve (Adjust Stok)</span>
+        }
+      </form>
+    default:
+      <span></span>
+  }
+}
+
+templ itemRow(p ShowProps, it domain.StokOpnameItem) {
+  if p.Opname.Status == domain.OpnameDraft {
+    <tr>
+      <td class="px-3 py-2">{ it.ProdukNama }</td>
+      <td class="px-3 py-2 text-right text-slate-700">{ fmt.Sprintf("%g", it.QtySistem) }</td>
+      <td class="px-3 py-2 text-right" colspan="2">
+        <form method="post" action={ templ.SafeURL(fmt.Sprintf("/opname/%d/item/%d", p.Opname.ID, it.ProdukID)) }
+              class="flex items-center gap-2 justify-end">
+          <input name="qty_fisik" type="number" step="0.0001" min="0" value={ fmt.Sprintf("%g", it.QtyFisik) }
+                 class="input w-32 text-right"/>
+          <input name="keterangan" type="text" placeholder="Catatan..." value={ it.Keterangan }
+                 class="input w-48"/>
+          <button type="submit" class="btn-secondary btn-sm">Simpan</button>
+        </form>
+      </td>
+      <td class={ "px-3 py-2 text-right font-medium", selisihColor(it.Selisih) }>{ fmt.Sprintf("%+g", it.Selisih) }</td>
+      <td class="px-3 py-2"></td>
+    </tr>
+  } else {
+    <tr>
+      <td class="px-3 py-2">{ it.ProdukNama }</td>
+      <td class="px-3 py-2 text-right text-slate-700">{ fmt.Sprintf("%g", it.QtySistem) }</td>
+      <td class="px-3 py-2 text-right">{ fmt.Sprintf("%g", it.QtyFisik) }</td>
+      <td class={ "px-3 py-2 text-right font-medium", selisihColor(it.Selisih) }>{ fmt.Sprintf("%+g", it.Selisih) }</td>
+      <td class="px-3 py-2 text-slate-600">{ it.Keterangan }</td>
+    </tr>
+  }
+}

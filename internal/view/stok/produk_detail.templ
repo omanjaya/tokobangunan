@@ -1,0 +1,52 @@
+package stok
+
+import (
+  "fmt"
+
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ ProdukDetail(p ProdukDetailProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Stok " + p.ProdukNama,
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Inventori" },
+      { Label: "Stok", Href: "/stok" },
+      { Label: p.ProdukNama },
+    },
+  }) {
+    @components.PageHeader(p.ProdukNama, fmt.Sprintf("SKU: %s · Posisi stok di seluruh gudang.", p.ProdukSKU))
+
+    @components.Card(components.CardProps{ NoPad: true }) {
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+          <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="px-4 py-3 text-left font-medium">Gudang</th>
+              <th class="px-4 py-3 text-left font-medium">Satuan</th>
+              <th class="px-4 py-3 text-right font-medium">Qty</th>
+              <th class="px-4 py-3 text-right font-medium">Min</th>
+              <th class="px-4 py-3 text-left font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 bg-white">
+            for _, r := range p.Rows {
+              <tr class="hover:bg-slate-50">
+                <td class="px-4 py-3 font-medium text-slate-900">{ r.GudangNama }</td>
+                <td class="px-4 py-3 text-slate-600">{ r.SatuanKode }</td>
+                <td class="px-4 py-3 text-right tabular-nums">{ fmt.Sprintf("%.4f", r.Qty) }</td>
+                <td class="px-4 py-3 text-right tabular-nums text-slate-500">{ fmt.Sprintf("%.4f", r.StokMinimum) }</td>
+                <td class="px-4 py-3">
+                  @components.BadgeWithDot(StokStatusLabel(r.Qty, r.StokMinimum), StokStatusVariant(r.Qty, r.StokMinimum))
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+}

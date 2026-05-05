@@ -1,0 +1,194 @@
+package tabungan
+
+import (
+  "fmt"
+  "strconv"
+  "time"
+
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Show(p ShowProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Tabungan Mitra",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Mitra", Href: "/mitra" },
+      { Label: p.Mitra.Nama, Href: fmt.Sprintf("/mitra/%d", p.Mitra.ID) },
+      { Label: "Tabungan" },
+    },
+  }) {
+    @components.PageHeader(p.Mitra.Nama, "Saldo titipan & riwayat setor/tarik.") {
+    }
+
+    if p.FlashMsg != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "success", Message: p.FlashMsg })
+      </div>
+    }
+    if p.FlashErr != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "danger", Message: p.FlashErr })
+      </div>
+    }
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-2 space-y-4">
+        @saldoCard(p)
+        @historyCard(p)
+      </div>
+      <div class="space-y-4">
+        @formSetor(p)
+        @formTarik(p)
+      </div>
+    </div>
+  }
+}
+
+templ saldoCard(p ShowProps) {
+  @components.Card(components.CardProps{}) {
+    <div class="flex items-center justify-between">
+      <div>
+        <p class="text-xs uppercase tracking-wide text-slate-500">Saldo Tabungan</p>
+        <p class="kpi-value-lg text-emerald-700 mt-1">{ format.Rupiah(p.Saldo) }</p>
+      </div>
+      <div class="text-emerald-600">
+        @icon.Render("package", 40, "")
+      </div>
+    </div>
+  }
+}
+
+templ historyCard(p ShowProps) {
+  @components.Card(components.CardProps{ Title: "Riwayat Mutasi", NoPad: true }) {
+    if len(p.Items) == 0 {
+      <div class="p-6">
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "inbox",
+          Title: "Belum ada mutasi",
+          Description: "Belum ada setoran atau penarikan tabungan untuk mitra ini.",
+        })
+      </div>
+    } else {
+      @historyTable(p.Items)
+      @paginationFooter(p)
+    }
+  }
+}
+
+templ historyTable(rows []domain.TabunganMitra) {
+  <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left">Tanggal</th>
+          <th class="px-4 py-3 text-right">Setor</th>
+          <th class="px-4 py-3 text-right">Tarik</th>
+          <th class="px-4 py-3 text-right">Saldo</th>
+          <th class="px-4 py-3 text-left">Catatan</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 bg-white">
+        for _, r := range rows {
+          <tr>
+            <td class="px-4 py-3">{ r.Tanggal.Format("02 Jan 2006") }</td>
+            <td class="px-4 py-3 text-right text-emerald-700 num">
+              if r.Debit > 0 {
+                { format.Rupiah(r.Debit) }
+              } else {
+                <span class="text-slate-300">-</span>
+              }
+            </td>
+            <td class="px-4 py-3 text-right text-rose-600 num">
+              if r.Kredit > 0 {
+                { format.Rupiah(r.Kredit) }
+              } else {
+                <span class="text-slate-300">-</span>
+              }
+            </td>
+            <td class="px-4 py-3 text-right font-semibold num">{ format.Rupiah(r.Saldo) }</td>
+            <td class="px-4 py-3 text-slate-600">{ r.Catatan }</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+templ formSetor(p ShowProps) {
+  @components.Card(components.CardProps{ Title: "Setor", Subtitle: "Tambah saldo titipan." }) {
+    <form method="post" action={ templ.SafeURL(fmt.Sprintf("/mitra/%d/tabungan/setor", p.Mitra.ID)) } class="space-y-3">
+      <input type="hidden" name="csrf_token" value={ p.CSRFToken } />
+      @components.FormField(components.FormFieldProps{ ID: "setor_tanggal", Label: "Tanggal", Required: true }) {
+        @components.Input(components.InputProps{ ID: "setor_tanggal", Name: "tanggal", Type: "date",
+          Value: time.Now().Format("2006-01-02"), Required: true })
+      }
+      @components.FormField(components.FormFieldProps{ ID: "setor_jumlah", Label: "Jumlah (Rp)", Required: true }) {
+        @components.Input(components.InputProps{ ID: "setor_jumlah", Name: "jumlah", Type: "number", Required: true })
+      }
+      @components.FormField(components.FormFieldProps{ ID: "setor_catatan", Label: "Catatan" }) {
+        <textarea id="setor_catatan" name="catatan" rows="2" class="input"></textarea>
+      }
+      @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit", Class: "w-full" }) {
+        @icon.ArrowDown(16, "")
+        <span>Setor</span>
+      }
+    </form>
+  }
+}
+
+templ formTarik(p ShowProps) {
+  @components.Card(components.CardProps{ Title: "Tarik", Subtitle: "Kurangi saldo titipan." }) {
+    <form method="post" action={ templ.SafeURL(fmt.Sprintf("/mitra/%d/tabungan/tarik", p.Mitra.ID)) } class="space-y-3">
+      <input type="hidden" name="csrf_token" value={ p.CSRFToken } />
+      @components.FormField(components.FormFieldProps{ ID: "tarik_tanggal", Label: "Tanggal", Required: true }) {
+        @components.Input(components.InputProps{ ID: "tarik_tanggal", Name: "tanggal", Type: "date",
+          Value: time.Now().Format("2006-01-02"), Required: true })
+      }
+      @components.FormField(components.FormFieldProps{ ID: "tarik_jumlah", Label: "Jumlah (Rp)", Required: true }) {
+        @components.Input(components.InputProps{ ID: "tarik_jumlah", Name: "jumlah", Type: "number", Required: true })
+      }
+      @components.FormField(components.FormFieldProps{ ID: "tarik_catatan", Label: "Catatan" }) {
+        <textarea id="tarik_catatan" name="catatan" rows="2" class="input"></textarea>
+      }
+      @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Type: "submit", Class: "w-full" }) {
+        @icon.ArrowUp(16, "")
+        <span>Tarik</span>
+      }
+    </form>
+  }
+}
+
+templ paginationFooter(p ShowProps) {
+  <div class="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm text-slate-600">
+    <div>{ fmt.Sprintf("Total %d mutasi · halaman %d dari %d", p.Total, p.Page, p.TotalPages) }</div>
+    <div class="flex items-center gap-2">
+      if p.Page > 1 {
+        @components.Button(components.ButtonProps{ Variant: "secondary", Size: "sm",
+          Href: pageURL(p, p.Page-1) }) {
+          @icon.ChevronLeft(14, "")
+          <span>Sebelumnya</span>
+        }
+      }
+      if p.Page < p.TotalPages {
+        @components.Button(components.ButtonProps{ Variant: "secondary", Size: "sm",
+          Href: pageURL(p, p.Page+1) }) {
+          <span>Berikutnya</span>
+          @icon.ChevronRight(14, "")
+        }
+      }
+    </div>
+  </div>
+}
+
+func pageURL(p ShowProps, page int) string {
+  u := fmt.Sprintf("/mitra/%d/tabungan?page=%s", p.Mitra.ID, strconv.Itoa(page))
+  if p.From != "" { u += "&from=" + p.From }
+  if p.To != "" { u += "&to=" + p.To }
+  return u
+}

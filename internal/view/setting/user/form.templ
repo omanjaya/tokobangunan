@@ -1,0 +1,167 @@
+package userview
+
+import (
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// FormData - state form user.
+type FormData struct {
+  Username    string
+  NamaLengkap string
+  Email       string
+  Role        string
+  GudangID    *int64
+  IsActive    bool
+}
+
+// FormProps - props form user (create/edit).
+type FormProps struct {
+  Nav       layout.NavData
+  User      layout.UserData
+  Mode      string // "create" | "edit"
+  ID        int64
+  CSRFToken string
+  Gudangs   []domain.Gudang
+  Form      FormData
+  Error     string
+}
+
+templ Form(p FormProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: formTitle(p.Mode),
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Pengaturan", Href: "/setting" },
+      { Label: "User", Href: "/setting/user" },
+      { Label: formTitle(p.Mode) },
+    },
+  }) {
+    @components.PageHeader(formTitle(p.Mode), formSubtitle(p.Mode)) {}
+
+    if p.Error != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "danger", Title: "Gagal menyimpan", Message: p.Error })
+      </div>
+    }
+
+    if p.Mode == "create" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{
+          Variant: "info",
+          Message: "Password akan dibuat otomatis dan ditampilkan sekali setelah user disimpan. Catat baik-baik.",
+        })
+      </div>
+    }
+
+    @components.Card(components.CardProps{}) {
+      <form
+        method="post"
+        action={ templ.SafeURL(formAction(p)) }
+        class="space-y-4 max-w-2xl"
+        x-data={ "{ role: '" + roleOrDefault(p.Form.Role) + "' }" }
+      >
+        <input type="hidden" name="csrf_token" value={ p.CSRFToken }/>
+
+        @components.FormField(components.FormFieldProps{ ID: "username", Label: "Username", Required: true, Helper: "Huruf kecil, digit, underscore. 3-31 karakter, diawali huruf." }) {
+          @components.Input(components.InputProps{
+            ID: "username", Name: "username", Value: p.Form.Username, Required: true,
+            Placeholder: "kasir1",
+          })
+        }
+
+        @components.FormField(components.FormFieldProps{ ID: "nama_lengkap", Label: "Nama Lengkap", Required: true }) {
+          @components.Input(components.InputProps{
+            ID: "nama_lengkap", Name: "nama_lengkap", Value: p.Form.NamaLengkap, Required: true,
+          })
+        }
+
+        @components.FormField(components.FormFieldProps{ ID: "email", Label: "Email" }) {
+          @components.Input(components.InputProps{
+            ID: "email", Name: "email", Type: "email", Value: p.Form.Email,
+            Placeholder: "user@example.com",
+          })
+        }
+
+        @components.FormField(components.FormFieldProps{ ID: "role", Label: "Role", Required: true }) {
+          <select id="role" name="role" required class="input" x-model="role">
+            for _, r := range RolesAll() {
+              if r.Value == p.Form.Role {
+                <option value={ r.Value } selected>{ r.Label }</option>
+              } else {
+                <option value={ r.Value }>{ r.Label }</option>
+              }
+            }
+          </select>
+        }
+
+        <div x-show="role === 'kasir' || role === 'gudang'" x-cloak>
+          @components.FormField(components.FormFieldProps{ ID: "gudang_id", Label: "Gudang", Helper: "Wajib untuk role kasir/gudang. Untuk owner/admin dikosongkan." }) {
+            <select id="gudang_id" name="gudang_id" class="input">
+              <option value="">— Pilih gudang —</option>
+              for _, g := range p.Gudangs {
+                if IsSelectedGudang(p.Form.GudangID, g.ID) {
+                  <option value={ idToStr(g.ID) } selected>{ g.Kode } · { g.Nama }</option>
+                } else {
+                  <option value={ idToStr(g.ID) }>{ g.Kode } · { g.Nama }</option>
+                }
+              }
+            </select>
+          }
+        </div>
+
+        <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+          if p.Form.IsActive {
+            <input type="checkbox" name="is_active" value="on" checked
+                   class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+          } else {
+            <input type="checkbox" name="is_active" value="on"
+                   class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+          }
+          <span>Aktif</span>
+        </label>
+
+        <div class="flex items-center gap-2 pt-2">
+          @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+            @icon.Check(16, "")
+            <span>Simpan</span>
+          }
+          @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: "/setting/user" }) {
+            <span>Batal</span>
+          }
+        </div>
+      </form>
+    }
+  }
+}
+
+func formTitle(mode string) string {
+  if mode == "edit" {
+    return "Edit User"
+  }
+  return "Tambah User"
+}
+
+func formSubtitle(mode string) string {
+  if mode == "edit" {
+    return "Ubah data akun pengguna."
+  }
+  return "Buat akun pengguna baru."
+}
+
+func formAction(p FormProps) string {
+  if p.Mode == "edit" {
+    return "/setting/user/" + idToStr(p.ID)
+  }
+  return "/setting/user"
+}
+
+func roleOrDefault(r string) string {
+  if r == "" {
+    return domain.RoleKasir
+  }
+  return r
+}

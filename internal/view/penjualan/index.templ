@@ -1,0 +1,168 @@
+package penjualan
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Index(p IndexProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Penjualan",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Transaksi" },
+      { Label: "Penjualan" },
+    },
+  }) {
+    @components.PageHeader("Penjualan", "Daftar transaksi penjualan dan kwitansi.") {
+      @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Href: "/penjualan/baru" }) {
+        @icon.Plus(16, "")
+        <span>Penjualan Baru</span>
+      }
+    }
+
+    @components.FilterChips(penjualanPresets(), penjualanPresetKey(p))
+    @filterBar(p)
+
+    @components.Card(components.CardProps{ NoPad: true }) {
+      if len(p.Rows) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "shopping-cart",
+          Title: "Belum ada penjualan",
+          Description: "Klik 'Penjualan Baru' untuk mencatat transaksi.",
+        })
+      } else {
+        @indexTable(p.Rows)
+        @components.Pagination(components.PaginationProps{
+          Page: p.Page, PerPage: p.PerPage, Total: p.Total, TotalPages: p.TotalPages,
+          BaseURL: "/penjualan", QueryStr: penjualanQueryStr(p),
+        })
+      }
+    }
+  }
+}
+
+templ filterBar(p IndexProps) {
+  @components.MobileFilter() {
+  <form method="get" action="/penjualan" class="flex flex-wrap items-end gap-3 mb-4">
+    <div class="w-44">
+      @components.FormField(components.FormFieldProps{ ID: "from", Label: "Dari" }) {
+        @components.Input(components.InputProps{
+          ID: "from", Name: "from", Type: "date", Value: p.From,
+        })
+      }
+    </div>
+    <div class="w-44">
+      @components.FormField(components.FormFieldProps{ ID: "to", Label: "Sampai" }) {
+        @components.Input(components.InputProps{
+          ID: "to", Name: "to", Type: "date", Value: p.To,
+        })
+      }
+    </div>
+    <div class="w-48">
+      @components.FormField(components.FormFieldProps{ ID: "gudang_id", Label: "Gudang" }) {
+        <select id="gudang_id" name="gudang_id" class="input">
+          <option value="0">Semua gudang</option>
+          for _, g := range p.Gudangs {
+            if g.ID == p.GudangID {
+              <option value={ strconv.FormatInt(g.ID, 10) } selected>{ g.Kode } — { g.Nama }</option>
+            } else {
+              <option value={ strconv.FormatInt(g.ID, 10) }>{ g.Kode } — { g.Nama }</option>
+            }
+          }
+        </select>
+      }
+    </div>
+    <div class="w-44">
+      @components.FormField(components.FormFieldProps{ ID: "status", Label: "Status" }) {
+        <select id="status" name="status" class="input">
+          <option value="">Semua status</option>
+          @statusOption("lunas", "Lunas", p.Status)
+          @statusOption("kredit", "Kredit", p.Status)
+          @statusOption("sebagian", "Sebagian", p.Status)
+        </select>
+      }
+    </div>
+    <div class="flex-1 min-w-48">
+      @components.FormField(components.FormFieldProps{ ID: "q", Label: "Cari Nomor" }) {
+        <input type="search" id="q" name="q" value={ p.Query } placeholder="Mis. CGG/2025/02"
+               class="input" data-table-search/>
+      }
+    </div>
+    <button type="submit" class="btn-secondary btn-md">
+      @icon.Filter(14, "")
+      <span>Terapkan</span>
+    </button>
+    @components.HxIndicator()
+  </form>
+  }
+}
+
+templ statusOption(value, label, current string) {
+  if value == current {
+    <option value={ value } selected>{ label }</option>
+  } else {
+    <option value={ value }>{ label }</option>
+  }
+}
+
+templ indexTable(rows []Row) {
+  <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-sm">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Tanggal</th>
+          <th class="px-4 py-3 text-left font-medium">Nomor</th>
+          <th class="px-4 py-3 text-left font-medium">Mitra</th>
+          <th class="px-4 py-3 text-left font-medium">Gudang</th>
+          <th class="px-4 py-3 text-right font-medium">Total</th>
+          <th class="px-4 py-3 text-left font-medium">Status</th>
+          <th class="px-4 py-3 text-right font-medium">Aksi</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 bg-white" x-data="tableNav('/penjualan/:id')">
+        for _, r := range rows {
+          <tr data-id={ strconv.FormatInt(r.Penjualan.ID, 10) }>
+            <td class="px-4 py-3">{ r.Penjualan.Tanggal.Format("02 Jan 2006") }</td>
+            <td class="px-4 py-3 font-mono">{ r.Penjualan.NomorKwitansi }</td>
+            <td class="px-4 py-3">{ r.MitraNama }</td>
+            <td class="px-4 py-3">{ r.GudangKode }</td>
+            <td class="px-4 py-3 text-right font-medium num">{ format.Rupiah(r.Penjualan.Total) }</td>
+            <td class="px-4 py-3">
+              @statusBadge(string(r.Penjualan.StatusBayar))
+            </td>
+            <td class="px-4 py-3 text-right">
+              <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d", r.Penjualan.ID)) }
+                 class="text-brand-600 hover:underline text-sm">Detail</a>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+// TODO: unify with components.Badge + a shared statusVariant mapper once added to components/badge_helpers.go.
+templ statusBadge(status string) {
+  switch status {
+    case "lunas":
+      <span class={ "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
+                    components.BadgeColor("success") }>Lunas</span>
+    case "kredit":
+      <span class={ "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
+                    components.BadgeColor("warning") }>Kredit</span>
+    case "sebagian":
+      <span class={ "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
+                    components.BadgeColor("info") }>Sebagian</span>
+    default:
+      <span class={ "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
+                    components.BadgeColor("default") }>{ status }</span>
+  }
+}
+

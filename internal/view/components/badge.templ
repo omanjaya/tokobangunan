@@ -1,0 +1,16 @@
+package components
+
+// Badge - pill kecil untuk status (success/warning/danger/info/purple/default).
+templ Badge(text string, variant string) {
+  <span class={ "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", BadgeColor(variant) }>
+    { text }
+  </span>
+}
+
+// BadgeWithDot - varian dengan titik kecil di kiri label.
+templ BadgeWithDot(text string, variant string) {
+  <span class={ "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium", BadgeColor(variant) }>
+    <span class={ "h-1.5 w-1.5 rounded-full", badgeDotColor(variant) } aria-hidden="true"></span>
+    { text }
+  </span>
+}

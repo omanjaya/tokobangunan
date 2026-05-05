@@ -1,0 +1,387 @@
+package dashboard
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/repo"
+  "github.com/omanjaya/tokobangunan/internal/service"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// IndexProps - data dashboard.
+type IndexProps struct {
+  Nav  layout.NavData
+  User layout.UserData
+  Data *service.DashboardData
+}
+
+templ Index(p IndexProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Dashboard",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Dashboard" },
+    },
+  }) {
+    @components.PageHeader("Dashboard", dashSubtitle(p.Data)) {
+      @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: "/laporan" }) {
+        @icon.BarChart(16, "")
+        <span>Laporan</span>
+      }
+      @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Href: "/penjualan/baru" }) {
+        @icon.Plus(16, "")
+        <span>Penjualan baru</span>
+      }
+    }
+
+    @kpiGrid(p.Data)
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-2">
+        @components.Card(components.CardProps{ Title: "Penjualan 30 hari", Subtitle: "Tren omset harian" }) {
+          if p.Data != nil && hasSales(p.Data.SalesLast30) {
+            @components.SalesChart(components.SalesChartProps{
+              Aggregated: p.Data.SalesLast30,
+              Height: 220,
+            })
+          } else {
+            @components.EmptyState(components.EmptyStateProps{
+              IconName: "bar-chart-3",
+              Title: "Belum ada data penjualan",
+              Description: "Tren omset 30 hari akan tampil setelah ada transaksi.",
+            })
+          }
+        }
+      </div>
+      <div>
+        @components.Card(components.CardProps{ Title: "Top mitra", Subtitle: "Berdasarkan omset 30 hari" }) {
+          if p.Data != nil && len(p.Data.TopMitra) > 0 {
+            @topMitraList(p.Data.TopMitra)
+          } else {
+            @components.EmptyState(components.EmptyStateProps{
+              IconName: "users",
+              Title: "Belum ada mitra teratas",
+              Description: "Daftar mitra dengan omset tertinggi akan muncul di sini.",
+            })
+          }
+        }
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+      <div>
+        @components.Card(components.CardProps{ Title: "Stok kritis", Subtitle: "Item di bawah minimum" }) {
+          if p.Data != nil && len(p.Data.StokKritis) > 0 {
+            @stokKritisList(p.Data.StokKritis)
+          } else {
+            @components.EmptyState(components.EmptyStateProps{
+              IconName: "package",
+              Title: "Stok aman",
+              Description: "Tidak ada produk di bawah stok minimum saat ini.",
+            })
+          }
+        }
+      </div>
+      <div>
+        @components.Card(components.CardProps{ Title: "Transaksi terakhir", Subtitle: "10 penjualan terbaru" }) {
+          if p.Data != nil && len(p.Data.RecentTrx) > 0 {
+            @recentTrxList(p.Data.RecentTrx)
+          } else {
+            @components.EmptyState(components.EmptyStateProps{
+              IconName: "inbox",
+              Title: "Belum ada transaksi",
+              Description: "Transaksi yang dibuat hari ini akan tampil di sini.",
+            }) {
+              @components.Button(components.ButtonProps{ Variant: "primary", Size: "sm", Href: "/penjualan/baru" }) {
+                @icon.Plus(14, "")
+                <span>Buat penjualan</span>
+              }
+            }
+          }
+        }
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+      <div>
+        @components.Card(components.CardProps{ Title: "Pembayaran terakhir", Subtitle: "5 pembayaran terbaru" }) {
+          if p.Data != nil && len(p.Data.RecentPembayaran) > 0 {
+            @recentPembayaranList(p.Data.RecentPembayaran)
+          } else {
+            @components.EmptyState(components.EmptyStateProps{
+              IconName: "credit-card",
+              Title: "Belum ada pembayaran",
+              Description: "Pembayaran terbaru dari mitra akan tampil di sini.",
+            })
+          }
+        }
+      </div>
+      <div>
+        @components.Card(components.CardProps{ Title: "Mutasi terakhir", Subtitle: "5 mutasi antar gudang" }) {
+          if p.Data != nil && len(p.Data.RecentMutasi) > 0 {
+            @recentMutasiList(p.Data.RecentMutasi)
+          } else {
+            @components.EmptyState(components.EmptyStateProps{
+              IconName: "truck",
+              Title: "Belum ada mutasi",
+              Description: "Mutasi antar gudang yang dibuat akan tampil di sini.",
+            })
+          }
+        }
+      </div>
+    </div>
+  }
+}
+
+templ kpiGrid(d *service.DashboardData) {
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    if d != nil && d.KPI != nil {
+      @kpiCard("Omset hari ini", format.Rupiah(d.KPI.OmsetHariIni), "shopping-cart",
+                deltaText(d.KPI.OmsetHariIni, d.KPI.OmsetKemarin),
+                deltaDir(d.KPI.OmsetHariIni, d.KPI.OmsetKemarin))
+      @kpiCard("Piutang outstanding", format.Rupiah(d.KPI.PiutangOutstanding), "clock", "", "")
+      @kpiCard("Stok kritis", strconv.Itoa(d.KPI.StokKritisCount) + " item", "alert-triangle", "", "")
+      @kpiCard("Mitra aktif", strconv.Itoa(d.KPI.MitraAktifCount), "users",
+                strconv.Itoa(d.KPI.TransaksiHariIni) + " transaksi hari ini", "")
+    } else {
+      @kpiCard("Omset hari ini", "—", "shopping-cart", "", "")
+      @kpiCard("Piutang outstanding", "—", "clock", "", "")
+      @kpiCard("Stok kritis", "—", "alert-triangle", "", "")
+      @kpiCard("Mitra aktif", "—", "users", "", "")
+    }
+  </div>
+}
+
+templ kpiCard(title, value, iconName, delta, deltaDir string) {
+  <div class="card p-5">
+    <div class="flex items-center justify-between">
+      <span class="kpi-label">{ title }</span>
+      <span class="text-slate-400">
+        @icon.Render(iconName, 18, "")
+      </span>
+    </div>
+    <div class="mt-3 kpi-value-lg text-slate-900">{ value }</div>
+    if delta != "" {
+      <div class={ "mt-1 text-xs", components.DeltaColor(deltaDir, true) }>
+        { delta }
+      </div>
+    } else {
+      <div class="mt-1 text-xs text-slate-500">vs periode sebelumnya</div>
+    }
+  </div>
+}
+
+templ salesBarChart(rows []repo.SalesPerDay) {
+  <div class="flex items-end gap-1 h-40 px-1">
+    for _, r := range rows {
+      <div class="flex-1 flex flex-col items-center justify-end group" title={ chartTitle(r) }>
+        <div class="w-full bg-brand-500/80 hover:bg-brand-600 rounded-t-sm transition-colors"
+             style={ barStyle(r.Total, maxSales(rows)) }></div>
+      </div>
+    }
+  </div>
+  <div class="flex justify-between text-xs text-slate-500 mt-2 px-1">
+    <span>{ rows[0].Tanggal.Format("02 Jan") }</span>
+    <span>{ rows[len(rows)-1].Tanggal.Format("02 Jan") }</span>
+  </div>
+}
+
+templ topMitraList(rows []repo.TopMitra) {
+  <ul class="space-y-3">
+    for _, r := range rows {
+      <li>
+        <div class="flex items-center justify-between text-sm">
+          <span class="font-medium text-slate-900 truncate min-w-0" title={ r.MitraNama }>{ r.MitraNama }</span>
+          <span class="text-slate-600 shrink-0 num">{ format.Rupiah(r.Total) }</span>
+        </div>
+        <div class="mt-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+          <div class="h-full bg-brand-500" style={ progressStyle(r.Total, maxMitra(rows)) }></div>
+        </div>
+        <div class="text-xs text-slate-500 mt-0.5">{ strconv.Itoa(r.Transaksi) } transaksi</div>
+      </li>
+    }
+  </ul>
+}
+
+templ stokKritisList(rows []repo.StokKritisRow) {
+  <ul class="divide-y divide-slate-100">
+    for _, r := range rows {
+      <li class="py-2.5 flex items-center justify-between gap-3 text-sm">
+        <div class="min-w-0">
+          <div class="font-medium text-slate-900 truncate" title={ r.ProdukNama }>{ r.ProdukNama }</div>
+          <div class="text-xs text-slate-500" title={ r.GudangNama }>{ r.GudangNama }</div>
+        </div>
+        <div class="text-right shrink-0">
+          <div class="num text-danger-700">
+            { components.FormatNumber(r.Qty) } { r.SatuanKode }
+          </div>
+          <div class="text-xs text-slate-500">min { components.FormatNumber(r.StokMinimum) }</div>
+        </div>
+      </li>
+    }
+  </ul>
+}
+
+templ recentTrxList(rows []repo.LaporanPenjualanRow) {
+  <ul class="divide-y divide-slate-100">
+    for _, r := range rows {
+      <li class="py-2.5 flex items-center justify-between gap-3 text-sm">
+        <div class="min-w-0">
+          <a href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d", r.PenjualanID)) }
+             class="font-mono text-brand-600 hover:underline">{ r.NomorKwitansi }</a>
+          <div class="text-xs text-slate-500 truncate" title={ r.MitraNama + " · " + r.GudangNama }>{ r.MitraNama } · { r.GudangNama }</div>
+        </div>
+        <div class="text-right shrink-0">
+          <div class="num">{ format.Rupiah(r.Total) }</div>
+          <div class="text-xs text-slate-500">{ r.Tanggal.Format("02 Jan") }</div>
+        </div>
+      </li>
+    }
+  </ul>
+}
+
+templ recentPembayaranList(rows []repo.RecentPembayaranRow) {
+  <ul class="divide-y divide-slate-100">
+    for _, r := range rows {
+      <li class="py-2.5 flex items-center justify-between gap-3 text-sm">
+        <div class="min-w-0">
+          <div class="font-medium text-slate-900 truncate" title={ r.MitraNama }>{ r.MitraNama }</div>
+          <div class="text-xs text-slate-500 truncate" title={ pembayaranMetaTitle(r.Metode, r.NomorRef) }>
+            { r.Metode }
+            if r.NomorRef != "" {
+              <span> · { r.NomorRef }</span>
+            }
+          </div>
+        </div>
+        <div class="text-right shrink-0">
+          <div class="num text-success-700">{ format.Rupiah(r.Jumlah) }</div>
+          <div class="text-xs text-slate-500">{ r.Tanggal.Format("02 Jan") }</div>
+        </div>
+      </li>
+    }
+  </ul>
+}
+
+templ recentMutasiList(rows []repo.RecentMutasiRow) {
+  <ul class="divide-y divide-slate-100">
+    for _, r := range rows {
+      <li class="py-2.5 flex items-center justify-between gap-3 text-sm">
+        <div class="min-w-0">
+          <a href={ templ.SafeURL(fmt.Sprintf("/mutasi/%d", r.ID)) }
+             class="font-mono text-brand-600 hover:underline">{ r.NomorMutasi }</a>
+          <div class="text-xs text-slate-500 truncate" title={ r.GudangAsal + " → " + r.GudangTujuan }>{ r.GudangAsal } → { r.GudangTujuan }</div>
+        </div>
+        <div class="text-right shrink-0">
+          <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{ r.Status }</span>
+          <div class="text-xs text-slate-500 mt-0.5">{ r.Tanggal.Format("02 Jan") }</div>
+        </div>
+      </li>
+    }
+  </ul>
+}
+
+// ----- helpers (Go) ---------------------------------------------------------
+
+func dashSubtitle(d *service.DashboardData) string {
+  if d == nil {
+    return "Ringkasan operasional toko hari ini."
+  }
+  return "Ringkasan operasional · " + d.ScopeNama
+}
+
+func hasSales(rows []repo.SalesPerDay) bool {
+  for _, r := range rows {
+    if r.Total > 0 {
+      return true
+    }
+  }
+  return false
+}
+
+func maxSales(rows []repo.SalesPerDay) int64 {
+  var m int64
+  for _, r := range rows {
+    if r.Total > m {
+      m = r.Total
+    }
+  }
+  if m == 0 {
+    return 1
+  }
+  return m
+}
+
+func maxMitra(rows []repo.TopMitra) int64 {
+  var m int64
+  for _, r := range rows {
+    if r.Total > m {
+      m = r.Total
+    }
+  }
+  if m == 0 {
+    return 1
+  }
+  return m
+}
+
+func barStyle(value, max int64) string {
+  if max <= 0 {
+    return "height:0%"
+  }
+  pct := float64(value) / float64(max) * 100
+  if pct < 2 && value > 0 {
+    pct = 2
+  }
+  return fmt.Sprintf("height:%.1f%%", pct)
+}
+
+func progressStyle(value, max int64) string {
+  if max <= 0 {
+    return "width:0%"
+  }
+  pct := float64(value) / float64(max) * 100
+  return fmt.Sprintf("width:%.1f%%", pct)
+}
+
+func pembayaranMetaTitle(metode, ref string) string {
+  if ref == "" {
+    return metode
+  }
+  return metode + " · " + ref
+}
+
+func chartTitle(r repo.SalesPerDay) string {
+  return fmt.Sprintf("%s — %s (%d trx)", r.Tanggal.Format("02 Jan"),
+    format.Rupiah(r.Total), r.Count)
+}
+
+func deltaText(now, prev int64) string {
+  if prev == 0 {
+    if now == 0 {
+      return "Tidak ada data kemarin"
+    }
+    return "Naik dari Rp 0 kemarin"
+  }
+  diff := now - prev
+  pct := float64(diff) / float64(prev) * 100
+  sign := "+"
+  if diff < 0 {
+    sign = ""
+  }
+  return fmt.Sprintf("%s%.1f%% vs kemarin", sign, pct)
+}
+
+func deltaDir(now, prev int64) string {
+  if now > prev {
+    return "up"
+  }
+  if now < prev {
+    return "down"
+  }
+  return ""
+}

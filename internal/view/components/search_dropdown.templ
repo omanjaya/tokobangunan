@@ -1,0 +1,98 @@
+package components
+
+import (
+  "fmt"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+)
+
+// SearchHit adalah satu baris hasil global search.
+// Type: "produk" | "mitra" | "penjualan".
+type SearchHit struct {
+  Type      string
+  Href      string
+  Primary   string // label utama (mis. nama produk)
+  Secondary string // label sekunder (mis. SKU)
+  Meta      string // info tambahan kanan (mis. tanggal, total)
+}
+
+// SearchDropdownProps payload server-rendered dropdown.
+type SearchDropdownProps struct {
+  Query     string
+  Produk    []SearchHit
+  Mitra     []SearchHit
+  Penjualan []SearchHit
+}
+
+// IsEmpty true bila tidak ada satu pun hit.
+func (p SearchDropdownProps) IsEmpty() bool {
+  return len(p.Produk)+len(p.Mitra)+len(p.Penjualan) == 0
+}
+
+templ SearchDropdown(p SearchDropdownProps) {
+  <div class="absolute z-30 left-0 right-0 mt-1 rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden">
+    if p.IsEmpty() {
+      <div class="px-4 py-6 text-center">
+        <div class="text-slate-300 mb-2 inline-flex">
+          @icon.Search(28, "")
+        </div>
+        <div class="text-sm font-medium text-slate-900">Tidak ada hasil</div>
+        <div class="text-xs text-slate-500 mt-0.5">
+          Tidak ditemukan hasil untuk "{ p.Query }"
+        </div>
+      </div>
+    } else {
+      <div class="max-h-[28rem] overflow-y-auto py-1.5">
+        if len(p.Produk) > 0 {
+          @searchSection("Produk", "package", p.Produk)
+        }
+        if len(p.Mitra) > 0 {
+          @searchSection("Mitra", "users", p.Mitra)
+        }
+        if len(p.Penjualan) > 0 {
+          @searchSection("Penjualan", "shopping-cart", p.Penjualan)
+        }
+      </div>
+      <a
+        href={ templ.SafeURL(searchAllHref(p.Query)) }
+        class="block px-4 py-2.5 border-t border-slate-100 bg-slate-50 text-xs text-slate-500 hover:text-slate-900 hover:bg-slate-100 text-center"
+      >
+        Tekan Enter untuk lihat semua hasil
+      </a>
+    }
+  </div>
+}
+
+templ searchSection(label, iconName string, hits []SearchHit) {
+  <div class="px-1">
+    <div class="px-3 pt-2 pb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+      <span class="text-slate-400">
+        @icon.Render(iconName, 12, "")
+      </span>
+      { label }
+    </div>
+    for _, h := range hits {
+      <a
+        href={ templ.SafeURL(h.Href) }
+        class="flex items-start gap-3 px-3 py-2 mx-1 rounded-lg hover:bg-slate-100 group"
+        data-search-hit
+      >
+        <span class="mt-0.5 text-slate-400 group-hover:text-slate-600">
+          @icon.Render(iconName, 14, "")
+        </span>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-medium text-slate-900 truncate" title={ h.Primary }>{ h.Primary }</div>
+          if h.Secondary != "" {
+            <div class="text-xs text-slate-500 truncate" title={ h.Secondary }>{ h.Secondary }</div>
+          }
+        </div>
+        if h.Meta != "" {
+          <div class="text-xs text-slate-500 whitespace-nowrap shrink-0 pt-0.5">{ h.Meta }</div>
+        }
+      </a>
+    }
+  </div>
+}
+
+func searchAllHref(q string) string {
+  return fmt.Sprintf("/search/all?q=%s", urlQueryEscape(q))
+}

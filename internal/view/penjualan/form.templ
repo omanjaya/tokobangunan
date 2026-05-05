@@ -1,0 +1,598 @@
+package penjualan
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Form(p FormProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Penjualan Baru",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Transaksi" },
+      { Label: "Penjualan", Href: "/penjualan" },
+      { Label: "Baru" },
+    },
+  }) {
+    @components.PageHeader("Penjualan Baru", "Catat transaksi penjualan dan cetak kwitansi.")
+    @FormCard(p)
+  }
+}
+
+templ FormCard(p FormProps) {
+  <form
+    id="penjualan-form"
+    method="post"
+    action="/penjualan"
+    hx-post="/penjualan"
+    hx-target="#penjualan-form"
+    hx-swap="outerHTML"
+    x-data={ alpineState(p) }
+    @keydown.window.f2.prevent="$refs.submitBtn.click()"
+    @keydown.window.f3.prevent="addItem()"
+    @keydown.window.f4.prevent="setLunas()"
+    class="space-y-4"
+  >
+    if p.General != "" {
+      @components.Alert(components.AlertProps{ Variant: "danger", Message: p.General })
+    }
+
+    <input type="hidden" name="client_uuid" value={ p.ClientUUID }/>
+    <input type="hidden" name="print" :value="printFlag"/>
+
+    <div class="flex flex-wrap items-center gap-2 text-xs">
+      <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-slate-100 text-slate-600">
+        <span>Nomor:</span>
+        <span class="font-mono font-medium" x-text="nomorPreview || '—'"></span>
+        <span class="text-slate-500">(otomatis)</span>
+      </span>
+      <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-50 text-emerald-700"
+            x-show="draftSavedAt" x-cloak>
+        <span>Draft tersimpan</span>
+        <span x-text="draftAgo"></span>
+      </span>
+      <button type="button" @click="clearDraft()"
+              x-show="draftSavedAt" x-cloak
+              class="text-rose-600 hover:underline">
+        Hapus draft
+      </button>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-2 space-y-4">
+        @components.Card(components.CardProps{ Title: "Header" }) {
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            @components.FormField(components.FormFieldProps{
+              ID: "tanggal", Label: "Tanggal", Required: true,
+              Error: p.Errors["tanggal"],
+            }) {
+              <input id="tanggal" name="tanggal" type="date"
+                     value={ p.Input.Tanggal } required
+                     x-model="tanggal"
+                     @change="refreshNomor()"
+                     class={ "input", inputErr(p.Errors["tanggal"]) }/>
+            }
+            @components.FormField(components.FormFieldProps{
+              ID: "gudang_id", Label: "Gudang", Required: true,
+              Error: p.Errors["gudangid"],
+            }) {
+              <select id="gudang_id" name="gudang_id"
+                      x-model.number="gudangId"
+                      @change="refreshNomor()"
+                      class={ "input", inputErr(p.Errors["gudangid"]) } required>
+                <option value="0">— Pilih gudang —</option>
+                for _, g := range p.Gudangs {
+                  if g.ID == p.Input.GudangID {
+                    <option value={ strconv.FormatInt(g.ID, 10) } selected>{ g.Kode } — { g.Nama }</option>
+                  } else {
+                    <option value={ strconv.FormatInt(g.ID, 10) }>{ g.Kode } — { g.Nama }</option>
+                  }
+                }
+              </select>
+            }
+            @components.FormField(components.FormFieldProps{
+              ID: "mitra_search", Label: "Mitra (Pelanggan)", Required: true,
+              Helper: "Cari nama atau kode mitra. Pilih dari list.",
+              Error: p.Errors["mitraid"],
+            }) {
+              <div class="relative">
+                <input type="hidden" name="mitra_id" :value="mitra.id" required/>
+                <input
+                  id="mitra_search" type="search" autocomplete="off"
+                  x-model="mitra.query"
+                  @input.debounce.300ms="searchMitra()"
+                  @focus="mitra.open = true"
+                  placeholder="Ketik nama mitra…"
+                  value={ p.MitraNama }
+                  class={ "input", inputErr(p.Errors["mitraid"]) }
+                />
+                <div x-show="mitra.open && mitra.results.length > 0" x-cloak
+                     class="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                  <template x-for="m in mitra.results" :key="m.id">
+                    <button type="button" @click="pickMitra(m)"
+                            class="w-full text-left px-3 py-2 hover:bg-brand-50 text-sm">
+                      <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                          <div class="font-medium truncate" x-text="m.nama"></div>
+                          <div class="text-xs text-slate-500" x-text="m.kode + ' · ' + m.tipe"></div>
+                        </div>
+                        <span class="text-xs px-2 py-0.5 rounded-full whitespace-nowrap"
+                              :class="mitraSaldoClass(m)"
+                              x-text="'Saldo: Rp ' + formatRp((m.outstanding || 0) / 100)"></span>
+                      </div>
+                    </button>
+                  </template>
+                </div>
+                <div x-show="mitra.id > 0 && mitra.tipe" x-cloak
+                     class="mt-2 p-2 rounded-md bg-slate-50 border border-slate-200 text-xs">
+                  <div class="flex justify-between">
+                    <span class="text-slate-500">Mitra</span>
+                    <span class="font-medium" x-text="mitra.nama"></span>
+                  </div>
+                  <div class="flex justify-between" x-show="mitra.limit > 0">
+                    <span class="text-slate-500">Sisa Limit</span>
+                    <span class="font-medium"
+                          :class="(mitra.limit - mitra.outstanding) <= 0 ? 'text-rose-600' : 'text-emerald-700'"
+                          x-text="'Rp ' + formatRp(Math.max(0, (mitra.limit - mitra.outstanding) / 100))"></span>
+                  </div>
+                </div>
+              </div>
+            }
+          </div>
+        }
+
+        @components.Card(components.CardProps{ Title: "Item Penjualan" }) {
+          <div class="space-y-2">
+            <div class="grid grid-cols-12 gap-2 text-xs uppercase font-medium text-slate-500 px-2">
+              <div class="col-span-4">Produk</div>
+              <div class="col-span-1 text-right">Qty</div>
+              <div class="col-span-2">Satuan</div>
+              <div class="col-span-2 text-right">Harga (Rp)</div>
+              <div class="col-span-2 text-right">Diskon (Rp)</div>
+              <div class="col-span-1"></div>
+            </div>
+
+            <template x-for="(item, idx) in items" :key="item.uid">
+              <div class="grid grid-cols-12 gap-2 items-center">
+                <div class="col-span-4 relative" x-data="produkPicker()" x-init="bind(item)">
+                  <input type="hidden" :name="'Items['+idx+'].ProdukID'" :value="item.produk_id" required/>
+                  <input type="search" autocomplete="off"
+                         x-model="item.produk_label"
+                         @input.debounce.300ms="search(item, $root)"
+                         @focus="open = true"
+                         placeholder="Cari produk…"
+                         class="input"/>
+                  <div x-show="open && results.length > 0" x-cloak
+                       class="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                    <template x-for="p in results" :key="p.id">
+                      <button type="button" @click="pick(p, item)"
+                              class="w-full text-left px-3 py-2 hover:bg-brand-50 text-sm">
+                        <div class="flex items-start justify-between gap-2">
+                          <div class="min-w-0">
+                            <div class="font-medium truncate" x-text="p.nama"></div>
+                            <div class="text-xs text-slate-500" x-text="p.sku"></div>
+                          </div>
+                          <span class="text-xs px-2 py-0.5 rounded-full whitespace-nowrap"
+                                :class="stokBadgeClass(p)"
+                                x-text="'Stok: ' + (p.stok || 0).toFixed(2).replace(/\\.?0+$/, '') + ' ' + (p.stok_satuan || '')"></span>
+                        </div>
+                      </button>
+                    </template>
+                  </div>
+                  <div x-show="item.stok_label" x-cloak class="mt-1 text-xs">
+                    <span class="px-2 py-0.5 rounded-full" :class="item.stok_class" x-text="item.stok_label"></span>
+                  </div>
+                </div>
+                <div class="col-span-1">
+                  <input type="number" step="0.0001" min="0.0001"
+                         inputmode="decimal"
+                         :name="'Items['+idx+'].Qty'" x-model.number="item.qty"
+                         class="input text-right" required/>
+                </div>
+                <div class="col-span-2">
+                  <select :name="'Items['+idx+'].SatuanID'" x-model.number="item.satuan_id"
+                          class="input" required>
+                    <option value="0">—</option>
+                    <template x-for="s in item.satuans" :key="s.id">
+                      <option :value="s.id" x-text="s.kode + ' — ' + s.nama"></option>
+                    </template>
+                  </select>
+                </div>
+                <div class="col-span-2">
+                  <input type="number" min="0" step="1"
+                         inputmode="numeric"
+                         :name="'Items['+idx+'].HargaSatuan'" x-model.number="item.harga"
+                         class="input text-right" required/>
+                </div>
+                <div class="col-span-2">
+                  <input type="number" min="0" step="1"
+                         inputmode="numeric"
+                         :name="'Items['+idx+'].Diskon'" x-model.number="item.diskon_item"
+                         placeholder="0"
+                         class="input text-right"/>
+                </div>
+                <div class="col-span-1 text-right">
+                  <button type="button" @click="removeItem(idx)"
+                          class="text-rose-600 hover:text-rose-800" aria-label="Hapus item">
+                    @icon.Trash(16, "")
+                  </button>
+                </div>
+                <div class="col-span-12 text-right text-xs text-slate-500 pr-2">
+                  Subtotal: Rp <span x-text="formatRp(Math.max(0, item.qty * item.harga - (item.diskon_item || 0)))"></span>
+                </div>
+              </div>
+            </template>
+
+            <button type="button" @click="addItem()"
+                    class="btn-secondary btn-sm mt-2">
+              @icon.Plus(14, "")
+              <span>Tambah Item (F3)</span>
+            </button>
+          </div>
+        }
+
+        @components.Card(components.CardProps{ Title: "Catatan" }) {
+          @components.FormField(components.FormFieldProps{
+            ID: "catatan", Label: "Catatan (opsional)",
+          }) {
+            <textarea id="catatan" name="catatan" rows="2" class="input"
+                      placeholder="Catatan internal atau referensi…">{ p.Input.Catatan }</textarea>
+          }
+        }
+      </div>
+
+      <div class="space-y-4">
+        @components.Card(components.CardProps{ Title: "Ringkasan" }) {
+          <dl class="space-y-2 text-sm">
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Subtotal</dt>
+              <dd class="font-medium">Rp <span x-text="formatRp(subtotal)"></span></dd>
+            </div>
+            <div class="flex justify-between items-center">
+              <dt class="text-slate-500">Diskon (Rp)</dt>
+              <dd>
+                <input type="number" min="0" name="diskon"
+                       x-model.number="diskon"
+                       class="input text-right w-32"/>
+              </dd>
+            </div>
+            <div class="flex justify-between border-t pt-2">
+              <dt class="text-slate-500">DPP</dt>
+              <dd class="font-medium">Rp <span x-text="formatRp(dpp())"></span></dd>
+            </div>
+            if p.PPNAvailable {
+              <div class="flex justify-between items-center">
+                <dt class="text-slate-500">
+                  <label class="inline-flex items-center gap-2">
+                    <input type="checkbox" name="ppn_enabled" value="on"
+                           x-model="ppnEnabled"
+                           class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+                    <span>Termasuk PPN { fmt.Sprintf("%.1f%%", p.PPNPersen) }</span>
+                  </label>
+                </dt>
+                <dd class="font-medium">Rp <span x-text="formatRp(ppnAmount())"></span></dd>
+              </div>
+            }
+            <div class="flex justify-between border-t pt-2">
+              <dt class="font-semibold">Total</dt>
+              <dd class="font-bold text-lg">Rp <span x-text="formatRp(total())"></span></dd>
+            </div>
+          </dl>
+        }
+
+        @components.Card(components.CardProps{ Title: "Status Pembayaran" }) {
+          <div class="space-y-2 text-sm">
+            <label class="flex items-center gap-2">
+              <input type="radio" name="status_bayar" value="lunas" x-model="status"/>
+              <span>Lunas</span>
+            </label>
+            <label class="flex items-center gap-2">
+              <input type="radio" name="status_bayar" value="kredit" x-model="status"/>
+              <span>Kredit</span>
+            </label>
+            <label class="flex items-center gap-2">
+              <input type="radio" name="status_bayar" value="sebagian" x-model="status"/>
+              <span>Sebagian</span>
+            </label>
+
+            <div x-show="status === 'kredit' || status === 'sebagian'" x-cloak class="pt-2">
+              @components.FormField(components.FormFieldProps{
+                ID: "jatuh_tempo", Label: "Jatuh Tempo",
+                Error: p.Errors["jatuhtempo"],
+              }) {
+                <input id="jatuh_tempo" name="jatuh_tempo" type="date"
+                       value={ p.Input.JatuhTempo } class="input"/>
+              }
+            </div>
+          </div>
+        }
+
+        <div class="flex flex-col gap-2">
+          <button type="button" @click="setLunas()" class="btn-secondary btn-md">
+            <span>Bayar Tunai (F4)</span>
+          </button>
+          <button type="submit" x-ref="submitBtn"
+                  @click="printFlag = '0'"
+                  class="btn-secondary btn-md">
+            @icon.Check(16, "")
+            <span>Simpan</span>
+          </button>
+          <button type="submit"
+                  @click="printFlag = '1'"
+                  class="btn-primary btn-md">
+            @icon.Check(16, "")
+            <span>Simpan &amp; Cetak (F2)</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </form>
+
+  @formScripts()
+}
+
+templ formScripts() {
+  <script>
+    function uid() { return Math.random().toString(36).slice(2); }
+    function formatRpNum(n) {
+      if (!isFinite(n)) n = 0;
+      n = Math.round(n);
+      return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    }
+    window.alpineFormat = formatRpNum;
+
+    function emptyItem() {
+      return { uid: uid(), produk_id: 0, produk_label: "",
+               qty: 1, satuan_id: 0, harga: 0, diskon_item: 0, satuans: [],
+               stok_label: "", stok_class: "" };
+    }
+
+    function stokBadgeFromProduk(p) {
+      const qty = Number(p.stok || 0);
+      const min = Number(p.stok_minimum || 0);
+      if (qty <= 0 || (min > 0 && qty < min)) {
+        return "bg-rose-100 text-rose-700";
+      }
+      if (qty < 10) return "bg-amber-100 text-amber-700";
+      return "bg-emerald-100 text-emerald-700";
+    }
+
+    function stokLabelText(p) {
+      const qty = Number(p.stok || 0);
+      const sat = p.stok_satuan || "";
+      const trimmed = qty.toFixed(2).replace(/\.?0+$/, "");
+      return "Stok " + trimmed + " " + sat;
+    }
+
+    window.penjualanState = function(initial) {
+      return {
+        items: initial.items && initial.items.length ? initial.items : [emptyItem()],
+        diskon: initial.diskon || 0,
+        status: initial.status || "lunas",
+        tanggal: initial.tanggal || "",
+        gudangId: initial.gudangId || 0,
+        ppnEnabled: !!initial.ppnEnabled,
+        ppnPersen: Number(initial.ppnPersen || 0),
+        printFlag: "0",
+        nomorPreview: "",
+        draftSavedAt: 0,
+        draftAgo: "",
+        mitra: { id: 0, query: "", results: [], open: false,
+                 nama: "", tipe: "", limit: 0, outstanding: 0 },
+        get subtotal() {
+          return this.items.reduce((s, it) => {
+            const gross = (it.qty || 0) * (it.harga || 0);
+            const dItem = it.diskon_item || 0;
+            return s + Math.max(0, gross - dItem);
+          }, 0);
+        },
+        dpp() { return Math.max(0, this.subtotal - (this.diskon || 0)); },
+        ppnAmount() {
+          if (!this.ppnEnabled || !this.ppnPersen) return 0;
+          return Math.round(this.dpp() * this.ppnPersen / 100);
+        },
+        total() { return this.dpp() + this.ppnAmount(); },
+        formatRp(n) { return formatRpNum(n); },
+        addItem() { this.items.push(emptyItem()); },
+        removeItem(i) {
+          if (this.items.length > 1) this.items.splice(i, 1);
+        },
+        setLunas() { this.status = "lunas"; },
+
+        // ---- Mitra picker ----
+        async searchMitra() {
+          const q = (this.mitra.query || "").trim();
+          if (q.length < 2) { this.mitra.results = []; return; }
+          try {
+            const r = await fetch("/penjualan/search-mitra?q=" + encodeURIComponent(q));
+            this.mitra.results = await r.json();
+            this.mitra.open = true;
+          } catch (e) { this.mitra.results = []; }
+        },
+        pickMitra(m) {
+          this.mitra.id = m.id;
+          this.mitra.query = m.nama;
+          this.mitra.nama = m.nama;
+          this.mitra.tipe = m.tipe || "eceran";
+          this.mitra.limit = Number(m.limit || 0);
+          this.mitra.outstanding = Number(m.outstanding || 0);
+          this.mitra.open = false;
+          // Re-evaluate harga untuk semua item yang sudah dipilih.
+          this.items.forEach((it) => { if (it.produk_id > 0) this.refreshHarga(it); });
+        },
+        mitraSaldoClass(m) {
+          const lim = Number(m.limit || 0);
+          const out = Number(m.outstanding || 0);
+          if (lim > 0 && out > lim) return "bg-rose-100 text-rose-700";
+          if (lim > 0 && out > lim * 0.5) return "bg-amber-100 text-amber-700";
+          return "bg-slate-100 text-slate-600";
+        },
+        async refreshHarga(item) {
+          try {
+            const tipe = this.mitra.tipe || "eceran";
+            const url = "/penjualan/search-produk?q=" + encodeURIComponent(item.produk_label) +
+                        "&tipe=" + encodeURIComponent(tipe) +
+                        "&gudang_id=" + encodeURIComponent(this.gudangId || 0);
+            const r = await fetch(url);
+            const list = await r.json();
+            const found = (list || []).find(x => x.id === item.produk_id);
+            if (found) {
+              item.harga = Number(found.harga_default || item.harga || 0);
+            }
+          } catch (e) { /* noop */ }
+        },
+
+        // ---- Barcode scanner ----
+        async addBySKU(sku) {
+          try {
+            const r = await fetch("/produk/by-sku?sku=" + encodeURIComponent(sku));
+            if (!r.ok) {
+              if (window.app && window.app.toast) {
+                window.app.toast("warning", "Produk tidak ditemukan", "SKU: " + sku);
+              }
+              return;
+            }
+            const p = await r.json();
+            const hargaRp = p.harga_eceran ? Math.floor(p.harga_eceran / 100) : 0;
+            const existing = this.items.find(it => it.produk_id === p.id);
+            if (existing) {
+              existing.qty = (Number(existing.qty) || 0) + 1;
+            } else {
+              const item = {
+                uid: Math.random().toString(36).slice(2),
+                produk_id: p.id, produk_label: p.nama,
+                qty: 1, satuan_id: p.satuan_kecil_id || 0,
+                harga: hargaRp, diskon_item: 0,
+                satuans: [], stok_label: "", stok_class: "",
+              };
+              const emptyIdx = this.items.findIndex(it => !it.produk_id);
+              if (emptyIdx >= 0) {
+                this.items.splice(emptyIdx, 1, item);
+              } else {
+                this.items.push(item);
+              }
+            }
+            if (window.app && window.app.toast) {
+              window.app.toast("success", "Scanned", p.sku + " - " + p.nama, 2500);
+            }
+          } catch (e) {
+            if (window.app && window.app.toast) {
+              window.app.toast("error", "Gagal lookup SKU", String(e));
+            }
+          }
+        },
+
+        // ---- Nomor preview ----
+        async refreshNomor() {
+          if (!this.tanggal || !this.gudangId) { this.nomorPreview = ""; return; }
+          try {
+            const r = await fetch("/penjualan/preview-nomor?gudang_id=" + this.gudangId +
+                                  "&tanggal=" + encodeURIComponent(this.tanggal));
+            const data = await r.json();
+            this.nomorPreview = data.nomor_preview || "";
+          } catch (e) { this.nomorPreview = ""; }
+        },
+
+        // ---- Draft helpers ----
+        clearDraft() {
+          try { localStorage.removeItem("tb:penjualan:draft"); } catch (e) {}
+          this.draftSavedAt = 0;
+          this.draftAgo = "";
+        },
+        tickDraft() {
+          if (!this.draftSavedAt) { this.draftAgo = ""; return; }
+          const sec = Math.max(0, Math.floor((Date.now() - this.draftSavedAt) / 1000));
+          if (sec < 5) this.draftAgo = "(baru saja)";
+          else if (sec < 60) this.draftAgo = "(" + sec + " detik lalu)";
+          else if (sec < 3600) this.draftAgo = "(" + Math.floor(sec / 60) + " menit lalu)";
+          else this.draftAgo = "(" + Math.floor(sec / 3600) + " jam lalu)";
+        },
+
+        init() {
+          // Refresh nomor saat awal load.
+          this.$nextTick(() => this.refreshNomor());
+
+          // Aktifkan barcode scanner global (HID keyboard emulation).
+          if (typeof window.barcodeScanner === "function") {
+            window.barcodeScanner((sku) => this.addBySKU(sku));
+          }
+
+          // Hook draft autosave: pakai event 'input' di form parent.
+          const root = this.$root;
+          if (root && root.addEventListener) {
+            const mark = () => { this.draftSavedAt = Date.now(); this.tickDraft(); };
+            root.addEventListener("input", () => setTimeout(mark, 450));
+            root.addEventListener("change", mark);
+          }
+          setInterval(() => this.tickDraft(), 5000);
+
+          // Echo back mitra dari server (kalau ada error & MitraNama prefilled).
+          const mitraSearchInput = document.getElementById("mitra_search");
+          if (mitraSearchInput && mitraSearchInput.value) {
+            this.mitra.query = mitraSearchInput.value;
+          }
+        },
+      };
+    };
+
+    window.produkPicker = function() {
+      return {
+        results: [], open: false, item: null,
+        bind(it) { this.item = it; },
+        stokBadgeClass(p) { return stokBadgeFromProduk(p); },
+        async search(item, root) {
+          if ((item.produk_label || "").trim().length < 2) { this.results = []; return; }
+          try {
+            const tipe = (root && root.mitra && root.mitra.tipe) ? root.mitra.tipe : "eceran";
+            const gid = (root && root.gudangId) ? root.gudangId : 0;
+            const url = "/penjualan/search-produk?q=" + encodeURIComponent(item.produk_label) +
+                        "&tipe=" + encodeURIComponent(tipe) +
+                        "&gudang_id=" + encodeURIComponent(gid);
+            const r = await fetch(url);
+            this.results = await r.json();
+            this.open = true;
+          } catch (e) { this.results = []; }
+        },
+        pick(p, item) {
+          item.produk_id = p.id;
+          item.produk_label = p.nama;
+          item.satuans = p.satuans || [];
+          if (item.satuans.length > 0) item.satuan_id = item.satuans[0].id;
+          item.harga = p.harga_default || 0;
+          item.stok_class = stokBadgeFromProduk(p);
+          item.stok_label = stokLabelText(p);
+          this.open = false;
+        },
+      };
+    };
+  </script>
+}
+
+func alpineState(p FormProps) string {
+  status := p.Input.StatusBayar
+  if status == "" {
+    status = "lunas"
+  }
+  ppnEnabled := "false"
+  if p.Input.PPNEnabled {
+    ppnEnabled = "true"
+  }
+  return "penjualanState({ items: [], diskon: 0, status: '" + status +
+    "', tanggal: '" + p.Input.Tanggal +
+    "', gudangId: " + strconv.FormatInt(p.Input.GudangID, 10) +
+    ", ppnEnabled: " + ppnEnabled +
+    ", ppnPersen: " + fmt.Sprintf("%g", p.PPNPersen) + " })"
+}
+
+func inputErr(err string) string {
+  if err != "" {
+    return "border-rose-300 focus-visible:ring-rose-500"
+  }
+  return ""
+}

@@ -1,0 +1,192 @@
+package components
+
+import (
+  "fmt"
+  "strconv"
+  "strings"
+
+  "github.com/omanjaya/tokobangunan/internal/repo"
+)
+
+// SalesChart render multi-line chart 30 hari (atau periode apapun).
+// Memakai Alpine untuk tooltip on-hover. Tidak butuh library JS eksternal.
+templ SalesChart(p SalesChartProps) {
+  {{
+    max, days, start := chartMaxFromSeries(p)
+    g := newChartGeometry(p.Width, p.Height, days, max, start)
+    series := p.Series
+    if len(series) == 0 && len(p.Aggregated) > 0 {
+      series = []SalesChartSeries{{
+        Label: "Omset",
+        Color: "#4f46e5",
+        Points: p.Aggregated,
+      }}
+    }
+  }}
+  <div
+    class="w-full"
+    x-data="salesChart()"
+    @mousemove="onMove($event)"
+    @mouseleave="hide()"
+  >
+    if len(series) > 1 {
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 text-xs text-slate-600">
+        for _, s := range series {
+          <span class="inline-flex items-center gap-1.5">
+            <span class="inline-block h-2 w-3 rounded-sm" style={ "background:" + s.Color }></span>
+            <span>{ s.Label }</span>
+          </span>
+        }
+      </div>
+    }
+    <div class="relative">
+      <svg
+        viewBox={ fmt.Sprintf("0 0 %d %d", g.W, g.H) }
+        class="w-full h-auto"
+        preserveAspectRatio="none"
+        x-ref="svg"
+      >
+        @chartGrid(g)
+        for _, s := range series {
+          <path
+            d={ PointsToPath(s.Points, g) }
+            fill="none"
+            stroke={ s.Color }
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          ></path>
+        }
+        @chartHotspots(g, series)
+      </svg>
+      <div
+        x-show="open"
+        x-cloak
+        class="pointer-events-none absolute bg-slate-900 text-white text-xs rounded-md px-2 py-1.5 shadow-lg"
+        :style="`left:${tipX}px; top:${tipY}px; transform:translate(-50%, -110%)`"
+      >
+        <div class="font-medium" x-text="tipDate"></div>
+        <template x-for="r in tipRows" :key="r.label">
+          <div class="flex items-center gap-2 mt-0.5">
+            <span class="inline-block h-2 w-2 rounded-full" :style="`background:${r.color}`"></span>
+            <span class="opacity-80" x-text="r.label"></span>
+            <span class="font-mono ml-auto" x-text="r.value"></span>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+}
+
+templ chartGrid(g chartGeometry) {
+  // Y axis labels (5 tick).
+  for i := 0; i <= 4; i++ {
+    {{
+      v := g.MaxY * int64(i) / 4
+      y := g.yPos(v)
+      yTxt := strconv.FormatFloat(y, 'f', 1, 64)
+      yLine := strconv.FormatFloat(y, 'f', 1, 64)
+    }}
+    <line x1={ strconv.Itoa(g.PadL) } x2={ strconv.Itoa(g.W - g.PadR) }
+          y1={ yLine } y2={ yLine }
+          stroke="#e4e4e7" stroke-width="1" stroke-dasharray={ tickDash(i) }></line>
+    <text x={ strconv.Itoa(g.PadL - 8) } y={ yTxt }
+          text-anchor="end" dominant-baseline="middle"
+          font-size="10" fill="#71717a" font-family="ui-monospace, monospace">
+      { FormatRupiahShort(v) }
+    </text>
+  }
+  // X axis labels (start, mid, end).
+  if g.Days > 0 {
+    {{
+      x0 := strconv.FormatFloat(g.xPos(0), 'f', 1, 64)
+      xMid := strconv.FormatFloat(g.xPos(g.Days/2), 'f', 1, 64)
+      xEnd := strconv.FormatFloat(g.xPos(g.Days-1), 'f', 1, 64)
+      yLabel := strconv.Itoa(g.H - 8)
+      mid := g.StartDate.AddDate(0, 0, g.Days/2)
+      end := g.StartDate.AddDate(0, 0, g.Days-1)
+    }}
+    <text x={ x0 } y={ yLabel } text-anchor="start"
+          font-size="10" fill="#a1a1aa">{ g.StartDate.Format("02 Jan") }</text>
+    <text x={ xMid } y={ yLabel } text-anchor="middle"
+          font-size="10" fill="#a1a1aa">{ mid.Format("02 Jan") }</text>
+    <text x={ xEnd } y={ yLabel } text-anchor="end"
+          font-size="10" fill="#a1a1aa">{ end.Format("02 Jan") }</text>
+  }
+}
+
+// chartHotspots render kolom transparan per hari sebagai hover target.
+// Data per kolom di-encode ke data-* attribute supaya JS bisa baca.
+templ chartHotspots(g chartGeometry, series []SalesChartSeries) {
+  for i := 0; i < g.Days; i++ {
+    {{
+      colW := 1.0
+      if g.Days > 1 {
+        colW = float64(g.InnerW) / float64(g.Days-1)
+      }
+      cx := g.xPos(i)
+      x := strconv.FormatFloat(cx-colW/2, 'f', 1, 64)
+      w := strconv.FormatFloat(colW, 'f', 1, 64)
+      cxStr := strconv.FormatFloat(cx, 'f', 1, 64)
+      payload := encodeHotspot(i, g, series)
+    }}
+    <g class="cursor-pointer">
+      <rect x={ x } y={ strconv.Itoa(g.PadT) } width={ w } height={ strconv.Itoa(g.InnerH) }
+            fill="transparent" data-hotspot={ payload } data-x={ cxStr }></rect>
+      for _, s := range series {
+        if i < len(s.Points) {
+          <circle cx={ cxStr }
+                  cy={ strconv.FormatFloat(g.yPos(s.Points[i].Total), 'f', 1, 64) }
+                  r="2.5" fill={ s.Color }></circle>
+        }
+      }
+    </g>
+  }
+}
+
+// encodeHotspot bentuk JSON minimal untuk dibaca JS tooltip:
+// {"d":"02 Jan", "rows":[{"label":"CANGGU","value":"Rp 1.2jt","color":"#..."}]}
+func encodeHotspot(i int, g chartGeometry, series []SalesChartSeries) string {
+  if i < 0 {
+    return ""
+  }
+  date := g.StartDate.AddDate(0, 0, i).Format("02 Jan 2006")
+  var rows []string
+  for _, s := range series {
+    if i >= len(s.Points) {
+      continue
+    }
+    p := s.Points[i]
+    rows = append(rows, fmt.Sprintf(
+      `{"label":%q,"value":%q,"color":%q}`,
+      s.Label, FormatRupiahShort(p.Total), s.Color,
+    ))
+  }
+  return fmt.Sprintf(`{"d":%q,"rows":[%s]}`, date, strings.Join(rows, ","))
+}
+
+func tickDash(i int) string {
+  if i == 0 || i == 4 {
+    return "0"
+  }
+  return "2 3"
+}
+
+// SalesChartFromMap konversi map[gudangID][]SalesPerDay + nama gudang ke
+// []SalesChartSeries dengan warna preset by kode.
+func SalesChartFromMap(rows map[int64][]repo.SalesPerDay, names map[int64]string, kodes map[int64]string) []SalesChartSeries {
+  out := make([]SalesChartSeries, 0, len(rows))
+  for id, pts := range rows {
+    label := names[id]
+    if label == "" {
+      label = fmt.Sprintf("Gudang %d", id)
+    }
+    out = append(out, SalesChartSeries{
+      Label:  label,
+      Color:  GudangColor(kodes[id]),
+      GKode:  kodes[id],
+      Points: pts,
+    })
+  }
+  return out
+}

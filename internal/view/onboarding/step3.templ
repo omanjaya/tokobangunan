@@ -1,0 +1,62 @@
+package onboarding
+
+import (
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+)
+
+templ Step3(p Step3Props) {
+  @wizardLayout("Step 3 — Produk", p.Steps) {
+    @components.Card(components.CardProps{
+      Title:    "Import Produk Awal",
+      Subtitle: "Tempel data CSV (SKU, Nama, Kategori, Satuan) atau lewati.",
+    }) {
+      if p.Done {
+        @components.Alert(components.AlertProps{
+          Variant: "success",
+          Title:   "Import selesai",
+          Message: strconv.Itoa(p.Imported) + " produk berhasil diimpor, " + strconv.Itoa(p.Failed) + " gagal.",
+        })
+        if len(p.ErrMsgs) > 0 {
+          <ul class="mt-3 text-xs text-rose-600 list-disc pl-5 space-y-1">
+            for _, m := range p.ErrMsgs {
+              <li>{ m }</li>
+            }
+          </ul>
+        }
+        <div class="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-100">
+          @components.Button(components.ButtonProps{Variant: "primary", Href: "/onboarding/step4"}) {
+            <span>Lanjut</span>
+          }
+        </div>
+      } else {
+        <form method="post" action="/onboarding/step3" class="space-y-4">
+          <input type="hidden" name="csrf_token" value={ p.CSRF }/>
+          <div class="text-xs text-slate-500">
+            Format header (opsional): <code class="bg-slate-100 px-1 rounded">SKU,Nama,Kategori,Satuan</code>.
+            Satuan default <code>PCS</code> kalau kosong.
+          </div>
+          <textarea name="csv" rows="10" class="input font-mono text-xs"
+                    placeholder="SKU,Nama,Kategori,Satuan
+SKU001,Semen Tiga Roda 50kg,Semen,SAK
+SKU002,Pasir Beton,Material,M3"></textarea>
+
+          <div class="flex justify-between gap-2 pt-2 border-t border-slate-100">
+            @components.Button(components.ButtonProps{Variant: "ghost", Href: "/onboarding/step2"}) {
+              <span>Kembali</span>
+            }
+            <div class="flex gap-2">
+              <button type="submit" name="skip" value="1" class="btn-secondary btn-md">
+                Lewati
+              </button>
+              @components.Button(components.ButtonProps{Variant: "primary", Type: "submit"}) {
+                <span>Import</span>
+              }
+            </div>
+          </div>
+        </form>
+      }
+    }
+  }
+}

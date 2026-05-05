@@ -1,0 +1,232 @@
+package components
+
+import "github.com/omanjaya/tokobangunan/internal/view/icon"
+
+// ConfirmDialogProps memodelkan tombol trigger + modal konfirmasi.
+// HxPost: kalau di-set akan dipakai sebagai HTMX action saat user konfirmasi.
+//   Kalau kosong, slot {children} dipakai (developer pasang form sendiri).
+// TypeName: kalau di-set, user harus mengetik nama persis sebelum bisa
+//   konfirmasi (untuk destructive level 2).
+type ConfirmDialogProps struct {
+  Trigger     string // teks tombol pemicu
+  TriggerVar  string // "danger" | "secondary" | "ghost" | "primary"
+  Title       string
+  Message     string
+  ConfirmText string
+  CancelText  string
+  Variant     string // "danger" | "primary"
+  HxPost      string
+  HxTarget    string
+  HxSwap      string
+  TypeName    string // kalau di-set, user harus ketik nama ini
+}
+
+templ ConfirmDialog(p ConfirmDialogProps) {
+  <div
+    x-data={ "{ open: false, typed: '', expected: '" + jsEscape(p.TypeName) + "' }" }
+    @keydown.escape.window="open = false"
+    class="inline-block"
+  >
+    @confirmTriggerButton(p)
+    <div
+      x-show="open"
+      x-cloak
+      x-transition.opacity
+      class="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+      @click.self="open = false"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        x-show="open"
+        x-transition:enter="transition ease-out duration-150"
+        x-transition:enter-start="opacity-0 scale-95"
+        x-transition:enter-end="opacity-100 scale-100"
+        x-effect="if (open) { $nextTick(() => $el.querySelector('button:not([disabled])')?.focus()) }"
+        tabindex="-1"
+        class="w-full max-w-md rounded-2xl bg-white shadow-xl border border-slate-200 overflow-hidden focus:outline-none"
+      >
+        <div class="p-5">
+          <div class="flex items-start gap-3">
+            <span class={ "inline-flex h-10 w-10 items-center justify-center rounded-full shrink-0",
+              templ.KV("bg-rose-50 text-rose-600", p.Variant == "danger"),
+              templ.KV("bg-sky-50 text-sky-600", p.Variant != "danger") }>
+              if p.Variant == "danger" {
+                @icon.AlertTriangle(20, "")
+              } else {
+                @icon.Info(20, "")
+              }
+            </span>
+            <div class="flex-1 min-w-0">
+              <h3 class="text-base font-semibold text-slate-900">{ p.Title }</h3>
+              if p.Message != "" {
+                <p class="text-sm text-slate-600 mt-1">{ p.Message }</p>
+              }
+              if p.TypeName != "" {
+                <div class="mt-3">
+                  <label class="block text-xs text-slate-500 mb-1">
+                    Ketik <span class="font-mono text-slate-900">{ p.TypeName }</span> untuk konfirmasi
+                  </label>
+                  <input
+                    type="text"
+                    x-model="typed"
+                    class="input h-9 text-sm w-full"
+                    autocomplete="off"
+                  />
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center justify-end gap-2 px-5 py-3 bg-slate-50 border-t border-slate-100">
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm"
+            @click="open = false"
+          >
+            { emptyStringFallback(p.CancelText, "Batal") }
+          </button>
+          if p.HxPost != "" {
+            <button
+              type="button"
+              class={ "btn btn-sm",
+                templ.KV("btn-danger", p.Variant == "danger"),
+                templ.KV("btn-primary", p.Variant != "danger") }
+              :disabled="expected !== '' && typed !== expected"
+              hx-post={ p.HxPost }
+              if p.HxTarget != "" {
+                hx-target={ p.HxTarget }
+              }
+              if p.HxSwap != "" {
+                hx-swap={ p.HxSwap }
+              }
+              @click="open = false"
+            >
+              { emptyStringFallback(p.ConfirmText, "Lanjutkan") }
+            </button>
+          } else {
+            <span :class="{ 'pointer-events-none opacity-50': expected !== '' && typed !== expected }">
+              { children... }
+            </span>
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+// ConfirmFormProps - standar untuk delete/destructive action via POST form
+// (CSRF middleware-friendly). Trigger berupa icon button kecil.
+// Form ditempatkan tersembunyi dalam DOM dan disubmit setelah user konfirmasi.
+type ConfirmFormProps struct {
+  // Action absolute URL POST.
+  Action string
+  // Title & Message dialog.
+  Title       string
+  Message     string
+  ConfirmText string
+  CancelText  string
+  Variant     string // "danger" | "primary"
+  // Trigger label/icon: kalau IconName diisi → icon button compact;
+  // kalau Trigger diisi → text button.
+  Trigger    string
+  TriggerVar string // "danger" | "secondary" | "ghost" | "primary"
+  IconName   string // mis. "trash"
+  AriaLabel  string
+  // CSRFToken WAJIB diisi (echo middleware ContextKey "csrf").
+  CSRFToken string
+  // Hidden field tambahan (key → value).
+  Hidden map[string]string
+}
+
+// ConfirmForm render trigger + dialog modal + form tersembunyi.
+// Setelah klik tombol konfirmasi, form di-submit secara native (POST + CSRF).
+templ ConfirmForm(p ConfirmFormProps) {
+  <div
+    x-data="{ open: false }"
+    @keydown.escape.window="open = false"
+    class="inline-block"
+  >
+    if p.IconName != "" {
+      <button type="button" @click="open = true"
+              class="inline-flex items-center justify-center h-8 w-8 rounded-md text-slate-500 hover:text-rose-600 hover:bg-rose-50"
+              aria-label={ emptyStringFallback(p.AriaLabel, "Hapus") }>
+        @iconRender(p.IconName, 14)
+      </button>
+    } else {
+      <button type="button" @click="open = true"
+              class={ "btn btn-sm",
+                templ.KV("btn-danger", p.TriggerVar == "danger"),
+                templ.KV("btn-primary", p.TriggerVar == "primary"),
+                templ.KV("btn-ghost", p.TriggerVar == "ghost"),
+                templ.KV("btn-secondary", p.TriggerVar == "" || p.TriggerVar == "secondary") }>
+        { emptyStringFallback(p.Trigger, "Hapus") }
+      </button>
+    }
+    <div x-show="open" x-cloak x-transition.opacity
+         class="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+         @click.self="open = false" role="dialog" aria-modal="true">
+      <div x-show="open"
+           x-transition:enter="transition ease-out duration-150"
+           x-transition:enter-start="opacity-0 scale-95"
+           x-transition:enter-end="opacity-100 scale-100"
+           x-effect="if (open) { $nextTick(() => $el.querySelector('button:not([disabled])')?.focus()) }"
+           tabindex="-1"
+           class="w-full max-w-md rounded-2xl bg-white shadow-xl border border-slate-200 overflow-hidden focus:outline-none">
+        <div class="p-5">
+          <div class="flex items-start gap-3">
+            <span class={ "inline-flex h-10 w-10 items-center justify-center rounded-full shrink-0",
+              templ.KV("bg-rose-50 text-rose-600", p.Variant == "danger"),
+              templ.KV("bg-sky-50 text-sky-600", p.Variant != "danger") }>
+              if p.Variant == "danger" {
+                @icon.AlertTriangle(20, "")
+              } else {
+                @icon.Info(20, "")
+              }
+            </span>
+            <div class="flex-1 min-w-0">
+              <h3 class="text-base font-semibold text-slate-900">{ emptyStringFallback(p.Title, "Konfirmasi") }</h3>
+              if p.Message != "" {
+                <p class="text-sm text-slate-600 mt-1">{ p.Message }</p>
+              }
+            </div>
+          </div>
+        </div>
+        <form method="post" action={ templ.SafeURL(p.Action) }
+              class="flex items-center justify-end gap-2 px-5 py-3 bg-slate-50 border-t border-slate-100">
+          <input type="hidden" name="csrf_token" value={ p.CSRFToken }/>
+          for k, v := range p.Hidden {
+            <input type="hidden" name={ k } value={ v }/>
+          }
+          <button type="button" class="btn btn-secondary btn-sm" @click="open = false">
+            { emptyStringFallback(p.CancelText, "Batal") }
+          </button>
+          <button type="submit"
+                  class={ "btn btn-sm",
+                    templ.KV("btn-danger", p.Variant == "danger"),
+                    templ.KV("btn-primary", p.Variant != "danger") }>
+            { emptyStringFallback(p.ConfirmText, "Hapus") }
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+}
+
+templ iconRender(name string, size int) {
+  @icon.Render(name, size, "")
+}
+
+templ confirmTriggerButton(p ConfirmDialogProps) {
+  <button
+    type="button"
+    @click="open = true"
+    class={ "btn btn-sm",
+      templ.KV("btn-danger", p.TriggerVar == "danger"),
+      templ.KV("btn-primary", p.TriggerVar == "primary"),
+      templ.KV("btn-ghost", p.TriggerVar == "ghost"),
+      templ.KV("btn-secondary", p.TriggerVar == "" || p.TriggerVar == "secondary") }
+  >
+    { p.Trigger }
+  </button>
+}

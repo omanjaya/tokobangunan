@@ -1,0 +1,18 @@
+package components
+
+import "github.com/omanjaya/tokobangunan/internal/format"
+
+// Money renders nilai cents sebagai <span class="num">Rp ...</span>.
+templ Money(amount int64) {
+  <span class="num">{ format.Rupiah(amount) }</span>
+}
+
+// MoneyTd renders nilai cents sebagai <td> rata kanan untuk tabel.
+templ MoneyTd(amount int64) {
+  <td class="px-3 py-2 text-right num">{ format.Rupiah(amount) }</td>
+}
+
+// MoneyCell flexible variant — terima extra class tambahan.
+templ MoneyCell(amount int64, extraClass string) {
+  <span class={ "num", extraClass }>{ format.Rupiah(amount) }</span>
+}

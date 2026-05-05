@@ -1,0 +1,101 @@
+package components
+
+import "github.com/omanjaya/tokobangunan/internal/view/icon"
+
+// FormFieldProps - wrapper field: label + slot input + helper + error.
+// Hint (opsional) — bila diisi, sebuah info icon dengan tooltip akan muncul
+// di samping label.
+type FormFieldProps struct {
+  ID       string
+  Label    string
+  Required bool
+  Helper   string
+  Error    string
+  Hint     string
+}
+
+templ FormField(p FormFieldProps) {
+  <div class="space-y-1.5">
+    if p.Label != "" {
+      <label for={ p.ID } class="flex items-center gap-1 text-sm font-medium text-slate-700">
+        <span>{ p.Label }</span>
+        if p.Required {
+          <span class="text-rose-500" aria-hidden="true">*</span>
+        }
+        if p.Hint != "" {
+          @Tooltip(TooltipProps{ Text: p.Hint, Position: "top" }) {
+            <span class="text-slate-400 hover:text-slate-600 cursor-help" aria-label={ p.Hint }>
+              @icon.Info(14, "")
+            </span>
+          }
+        }
+      </label>
+    }
+    { children... }
+    if p.Error != "" {
+      <p class="text-xs text-rose-600 flex items-start gap-1" id={ p.ID + "-error" } role="alert">
+        <span>{ p.Error }</span>
+      </p>
+    } else if p.Helper != "" {
+      <p class="text-xs text-slate-500" id={ p.ID + "-helper" }>{ p.Helper }</p>
+    }
+  </div>
+}
+
+// InputProps untuk komponen Input dasar.
+type InputProps struct {
+  ID           string
+  Name         string
+  Type         string // text|email|password|tel|number|search|date
+  Value        string
+  Placeholder  string
+  Autocomplete string
+  Disabled     bool
+  Readonly     bool
+  Required     bool
+  HasError     bool
+  Class        string
+  Prefix       string  // mis. "Rp"
+  Suffix       string  // mis. "kg"
+  Attrs        templ.Attributes
+}
+
+templ Input(p InputProps) {
+  if p.Prefix != "" || p.Suffix != "" {
+    <div class={ "flex items-stretch rounded-lg border bg-white overflow-hidden focus-within:ring-2 focus-within:ring-brand-500/20", inputBorderClass(p.HasError) }>
+      if p.Prefix != "" {
+        <span class="inline-flex items-center px-3 bg-slate-50 text-slate-500 text-sm border-r border-slate-200">{ p.Prefix }</span>
+      }
+      <input
+        id={ p.ID }
+        name={ p.Name }
+        type={ emptyStringFallback(p.Type, "text") }
+        value={ p.Value }
+        placeholder={ p.Placeholder }
+        autocomplete={ p.Autocomplete }
+        disabled?={ p.Disabled }
+        readonly?={ p.Readonly }
+        required?={ p.Required }
+        class={ "block w-full bg-transparent border-0 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0", p.Class }
+        { p.Attrs... }
+      />
+      if p.Suffix != "" {
+        <span class="inline-flex items-center px-3 bg-slate-50 text-slate-500 text-sm border-l border-slate-200">{ p.Suffix }</span>
+      }
+    </div>
+  } else {
+    <input
+      id={ p.ID }
+      name={ p.Name }
+      type={ emptyStringFallback(p.Type, "text") }
+      value={ p.Value }
+      placeholder={ p.Placeholder }
+      autocomplete={ p.Autocomplete }
+      disabled?={ p.Disabled }
+      readonly?={ p.Readonly }
+      required?={ p.Required }
+      class={ "input", inputErrorClass(p.HasError), p.Class }
+      { p.Attrs... }
+    />
+  }
+}

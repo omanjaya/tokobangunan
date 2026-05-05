@@ -1,0 +1,28 @@
+FROM golang:1.25-alpine
+
+ENV GOTOOLCHAIN=auto
+
+RUN apk add --no-cache git make curl bash
+
+# Hot reload tool
+RUN go install github.com/air-verse/air@latest
+
+# Type-safe template
+RUN go install github.com/a-h/templ/cmd/templ@latest
+
+# DB migration
+RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+# Type-safe SQL codegen
+RUN go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+
+# Tailwind CSS standalone CLI (no Node.js required)
+RUN curl -sLo /usr/local/bin/tailwindcss \
+        https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64 \
+    && chmod +x /usr/local/bin/tailwindcss
+
+WORKDIR /app
+
+EXPOSE 8080
+
+CMD ["air", "-c", ".air.toml"]

@@ -1,0 +1,63 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - bodyclose
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - gocritic
+    - revive
+
+  exclusions:
+    paths:
+      - tmp
+      - bin
+      - vendor
+      - ".*_templ\\.go$"
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - bodyclose
+      - path: cmd/seed/main\.go
+        linters:
+          - errcheck
+
+  settings:
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (*github.com/labstack/echo/v4.Response).Write
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - fmt.Fprint
+
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+        - singleCaseSwitch
+
+    revive:
+      rules:
+        - name: var-naming
+          disabled: false
+        - name: package-comments
+          disabled: true
+        - name: exported
+          disabled: true
+
+issues:
+  max-issues-per-linter: 50
+  max-same-issues: 10

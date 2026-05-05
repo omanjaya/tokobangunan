@@ -1,0 +1,158 @@
+package profile
+
+import (
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/dto"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// ShowProps - data render halaman /profil.
+// Form di-isi setelah submit gagal supaya value preserved.
+type ShowProps struct {
+  Nav        layout.NavData
+  User       layout.UserData
+  Account    *domain.UserAccount
+  GudangNama string
+  CSRFToken  string
+  Form       dto.ProfileUpdateInput
+  ErrorMsg   string
+  SuccessMsg string
+}
+
+templ Show(p ShowProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Profil Saya",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{ { Label: "Profil" } },
+  }) {
+    @components.PageHeader("Profil Saya", "Kelola informasi akun pribadi.") {}
+
+    @ProfileTabs("info")
+
+    if p.SuccessMsg != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "success", Message: p.SuccessMsg })
+      </div>
+    }
+    if p.ErrorMsg != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "danger", Message: p.ErrorMsg })
+      </div>
+    }
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="lg:col-span-1">
+        @profileSidebar(p)
+      </div>
+      <div class="lg:col-span-2">
+        @profileForm(p)
+      </div>
+    </div>
+  }
+}
+
+templ profileSidebar(p ShowProps) {
+  @components.Card(components.CardProps{}) {
+    <div class="flex flex-col items-center text-center">
+      <div class="h-20 w-20 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-2xl font-semibold">
+        { initialFromName(p.Account) }
+      </div>
+      <h3 class="mt-4 text-base font-semibold text-slate-900">
+        if p.Account != nil {
+          { p.Account.NamaLengkap }
+        }
+      </h3>
+      <p class="text-sm text-slate-500 font-mono mt-0.5">
+        if p.Account != nil {
+          { "@" + p.Account.Username }
+        }
+      </p>
+      <div class="mt-3">
+        if p.Account != nil {
+          @components.Badge(roleLabel(p.Account.Role), roleVariant(p.Account.Role))
+        }
+      </div>
+    </div>
+
+    <div class="mt-6 border-t border-slate-100 pt-4 space-y-3 text-sm">
+      <div class="flex items-start gap-2">
+        <span class="text-slate-400 mt-0.5">@icon.Package(14, "")</span>
+        <div>
+          <div class="text-xs text-slate-500">Gudang</div>
+          <div class="text-slate-900">{ p.GudangNama }</div>
+        </div>
+      </div>
+      <div class="flex items-start gap-2">
+        <span class="text-slate-400 mt-0.5">@icon.Clock(14, "")</span>
+        <div>
+          <div class="text-xs text-slate-500">Login Terakhir</div>
+          <div class="text-slate-900">{ lastLoginText(p.Account) }</div>
+        </div>
+      </div>
+    </div>
+  }
+}
+
+templ profileForm(p ShowProps) {
+  @components.Card(components.CardProps{ Title: "Informasi Pribadi", Subtitle: "Update nama dan email Anda. Username, role, dan gudang dikelola admin." }) {
+    <form method="post" action="/profil" class="space-y-4">
+      <input type="hidden" name="csrf_token" value={ p.CSRFToken }/>
+
+      @components.FormField(components.FormFieldProps{ ID: "username", Label: "Username", Helper: "Username tidak dapat diubah." }) {
+        @components.Input(components.InputProps{
+          ID: "username", Name: "_username_display",
+          Value: usernameOf(p.Account), Disabled: true, Readonly: true,
+        })
+      }
+
+      @components.FormField(components.FormFieldProps{ ID: "nama_lengkap", Label: "Nama Lengkap", Required: true }) {
+        @components.Input(components.InputProps{
+          ID: "nama_lengkap", Name: "nama_lengkap", Type: "text",
+          Value: namaValue(p), Required: true,
+        })
+      }
+
+      @components.FormField(components.FormFieldProps{ ID: "email", Label: "Email", Helper: "Opsional. Dipakai untuk notifikasi sistem." }) {
+        @components.Input(components.InputProps{
+          ID: "email", Name: "email", Type: "email",
+          Value: emailValue(p), Autocomplete: "email",
+        })
+      }
+
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+        @components.Button(components.ButtonProps{ Variant: "secondary", Href: "/dashboard" }) {
+          <span>Batal</span>
+        }
+        @components.Button(components.ButtonProps{ Variant: "primary", Type: "submit" }) {
+          @icon.Check(16, "")
+          <span>Simpan</span>
+        }
+      </div>
+    </form>
+  }
+}
+
+// ProfileTabs - navigasi tab Info | Password (active = "info" | "password").
+templ ProfileTabs(active string) {
+  <div class="flex items-center gap-1 border-b border-slate-200 mb-6">
+    @profileTabLink("/profil", "Info", active == "info")
+    @profileTabLink("/profil/password", "Ganti Password", active == "password")
+  </div>
+}
+
+templ profileTabLink(href, label string, active bool) {
+  if active {
+    <a href={ templ.SafeURL(href) }
+       class="px-4 py-2.5 text-sm font-medium text-brand-700 border-b-2 border-brand-600 -mb-px">
+      { label }
+    </a>
+  } else {
+    <a href={ templ.SafeURL(href) }
+       class="px-4 py-2.5 text-sm font-medium text-slate-500 hover:text-slate-900 border-b-2 border-transparent -mb-px">
+      { label }
+    </a>
+  }
+}

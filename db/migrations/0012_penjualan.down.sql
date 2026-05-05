@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS penjualan_item;
+DROP TABLE IF EXISTS penjualan_2026;
+DROP TABLE IF EXISTS penjualan_2025;
+DROP TABLE IF EXISTS penjualan;

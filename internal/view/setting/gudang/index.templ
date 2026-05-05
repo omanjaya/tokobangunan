@@ -1,0 +1,114 @@
+package gudangview
+
+import (
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// IndexProps - daftar gudang.
+type IndexProps struct {
+  Nav       layout.NavData
+  User      layout.UserData
+  Items     []domain.Gudang
+  CSRFToken string
+}
+
+templ Index(p IndexProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Gudang",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Pengaturan", Href: "/setting" },
+      { Label: "Gudang" },
+    },
+  }) {
+    @components.PageHeader("Gudang", "Daftar cabang/lokasi gudang.") {
+      @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Href: "/setting/gudang/baru" }) {
+        @icon.Plus(16, "")
+        <span>Tambah Gudang</span>
+      }
+    }
+
+    @components.Card(components.CardProps{ NoPad: true }) {
+      if len(p.Items) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "package",
+          Title: "Belum ada gudang",
+          Description: "Klik 'Tambah Gudang' untuk membuat cabang baru.",
+        })
+      } else {
+        @gudangTable(p)
+      }
+    }
+  }
+}
+
+templ gudangTable(p IndexProps) {
+  <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-sm">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Kode</th>
+          <th class="px-4 py-3 text-left font-medium">Nama</th>
+          <th class="px-4 py-3 text-left font-medium">Alamat</th>
+          <th class="px-4 py-3 text-left font-medium">Telepon</th>
+          <th class="px-4 py-3 text-left font-medium">Status</th>
+          <th class="px-4 py-3 text-right font-medium">Aksi</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 bg-white">
+        for _, g := range p.Items {
+          @rowGudang(g, p.CSRFToken)
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+templ rowGudang(g domain.Gudang, csrf string) {
+  <tr>
+    <td class="px-4 py-3 font-mono text-slate-900">{ g.Kode }</td>
+    <td class="px-4 py-3 font-medium text-slate-900">{ g.Nama }</td>
+    <td class="px-4 py-3 text-slate-600">{ stringOrDash(g.Alamat) }</td>
+    <td class="px-4 py-3 text-slate-600">{ stringOrDash(g.Telepon) }</td>
+    <td class="px-4 py-3">
+      if g.IsActive {
+        @components.BadgeWithDot("Aktif", "success")
+      } else {
+        @components.BadgeWithDot("Non-aktif", "default")
+      }
+    </td>
+    <td class="px-4 py-3 text-right">
+      <div class="inline-flex items-center gap-2">
+        @components.Button(components.ButtonProps{
+          Variant: "secondary", Size: "sm",
+          Href: "/setting/gudang/" + idToStr(g.ID) + "/edit",
+        }) {
+          @icon.Pencil(14, "")
+          <span>Edit</span>
+        }
+        @toggleForm(g, csrf)
+      </div>
+    </td>
+  </tr>
+}
+
+templ toggleForm(g domain.Gudang, csrf string) {
+  <form method="post" action={ templ.SafeURL("/setting/gudang/" + idToStr(g.ID) + "/toggle-active") } class="inline">
+    <input type="hidden" name="csrf_token" value={ csrf }/>
+    if g.IsActive {
+      <button type="submit" class="btn-ghost btn-sm" title="Non-aktifkan">
+        @icon.X(14, "")
+        <span>Non-aktifkan</span>
+      </button>
+    } else {
+      <button type="submit" class="btn-ghost btn-sm" title="Aktifkan">
+        @icon.Check(14, "")
+        <span>Aktifkan</span>
+      </button>
+    }
+  </form>
+}

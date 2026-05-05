@@ -1,0 +1,152 @@
+package printerview
+
+import (
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+// IndexProps - daftar template printer dikelompok per gudang.
+type IndexProps struct {
+  Nav       layout.NavData
+  User      layout.UserData
+  Items     []domain.PrinterTemplate
+  Gudangs   []domain.Gudang
+  CSRFToken string
+}
+
+templ Index(p IndexProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Template Printer",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Pengaturan", Href: "/setting" },
+      { Label: "Template Printer" },
+    },
+  }) {
+    @components.PageHeader("Template Printer", "Konfigurasi printer dot matrix per cabang. MVP: koordinat hardcoded; UI ini menyiapkan tempat config future.") {
+      @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Href: "/setting/printer/baru" }) {
+        @icon.Plus(16, "")
+        <span>Tambah Template</span>
+      }
+    }
+
+    if len(p.Items) == 0 {
+      @components.Card(components.CardProps{}) {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "printer",
+          Title: "Belum ada template printer",
+          Description: "Klik 'Tambah Template' untuk membuat konfigurasi printer per cabang.",
+        })
+      }
+    } else {
+      <div class="space-y-3" x-data="{ open: {} }">
+        for _, gid := range groupByGudang(p.Items) {
+          @gudangAccordion(gid, p.Gudangs, itemsForGudang(p.Items, gid), p.CSRFToken)
+        }
+      </div>
+    }
+  }
+}
+
+templ gudangAccordion(gudangID int64, gudangs []domain.Gudang, items []domain.PrinterTemplate, csrf string) {
+  <div class="card overflow-hidden">
+    <button
+      type="button"
+      class="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-slate-50"
+      x-on:click={ "open[" + idToStr(gudangID) + "] = !open[" + idToStr(gudangID) + "]" }
+    >
+      <div class="flex items-center gap-3">
+        <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+          @icon.Render("package", 16, "")
+        </span>
+        <div>
+          <div class="text-sm font-semibold text-slate-900">{ gudangNameByID(gudangs, gudangID) }</div>
+          <div class="text-xs text-slate-500">{ intToStr(len(items)) } template</div>
+        </div>
+      </div>
+      <span class="text-slate-400" x-bind:class={ "open[" + idToStr(gudangID) + "] ? 'rotate-180' : ''" }>
+        @icon.ChevronDown(16, "transition-transform")
+      </span>
+    </button>
+    <div x-show={ "open[" + idToStr(gudangID) + "]" } x-cloak class="border-t border-slate-100">
+      <table class="min-w-full divide-y divide-slate-100 text-sm">
+        <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+          <tr>
+            <th class="px-4 py-2 text-left font-medium">Jenis</th>
+            <th class="px-4 py-2 text-left font-medium">Nama</th>
+            <th class="px-4 py-2 text-left font-medium">Lebar</th>
+            <th class="px-4 py-2 text-left font-medium">Baris</th>
+            <th class="px-4 py-2 text-left font-medium">Offset</th>
+            <th class="px-4 py-2 text-left font-medium">Default</th>
+            <th class="px-4 py-2 text-right font-medium">Aksi</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100 bg-white">
+          for _, t := range items {
+            @rowTemplate(t, csrf)
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+}
+
+templ rowTemplate(t domain.PrinterTemplate, csrf string) {
+  <tr>
+    <td class="px-4 py-2">
+      @components.Badge(jenisLabel(t.Jenis), "info")
+    </td>
+    <td class="px-4 py-2 font-medium text-slate-900">{ t.Nama }</td>
+    <td class="px-4 py-2 font-mono text-slate-600">{ intToStr(t.LebarChar) }</td>
+    <td class="px-4 py-2 font-mono text-slate-600">{ intToStr(t.PanjangBaris) }</td>
+    <td class="px-4 py-2 font-mono text-slate-600">{ intToStr(t.OffsetX) },{ intToStr(t.OffsetY) }</td>
+    <td class="px-4 py-2">
+      if t.IsDefault {
+        @components.BadgeWithDot("Default", "success")
+      } else {
+        <span class="text-xs text-slate-500">—</span>
+      }
+    </td>
+    <td class="px-4 py-2 text-right">
+      <div class="inline-flex items-center gap-1.5">
+        <button
+          type="button"
+          class="btn-ghost btn-sm"
+          title="Test print preview"
+          hx-post={ "/setting/printer/" + idToStr(t.ID) + "/test" }
+          hx-headers={ `{"X-CSRF-Token":"` + csrf + `"}` }
+          hx-target={ "#test-out-" + idToStr(t.ID) }
+          hx-swap="innerHTML"
+        >
+          @icon.Render("printer", 14, "")
+          <span>Test</span>
+        </button>
+        @components.Button(components.ButtonProps{
+          Variant: "secondary", Size: "sm",
+          Href: "/setting/printer/" + idToStr(t.ID) + "/edit",
+        }) {
+          @icon.Pencil(14, "")
+          <span>Edit</span>
+        }
+        @components.ConfirmForm(components.ConfirmFormProps{
+          Action:      "/setting/printer/" + idToStr(t.ID) + "/delete",
+          Title:       "Hapus Template Printer",
+          Message:     "Hapus template ini?",
+          ConfirmText: "Hapus",
+          Variant:     "danger",
+          IconName:    "trash-2",
+          AriaLabel:   "Hapus template",
+          CSRFToken:   csrf,
+        })
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="7" class="px-4 pb-3">
+      <pre id={ "test-out-" + idToStr(t.ID) } class="text-[10px] leading-tight font-mono text-slate-600 bg-slate-50 rounded-md p-2 overflow-x-auto" style="white-space:pre"></pre>
+    </td>
+  </tr>
+}

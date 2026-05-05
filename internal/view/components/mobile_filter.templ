@@ -1,0 +1,29 @@
+package components
+
+// MobileFilter wraps a filter form so it collapses on mobile (<md) into a
+// `<details>` toggle. On desktop (md+) the body is always visible via CSS
+// overrides, and the `<summary>` is hidden — i.e. it behaves like a normal
+// inline filter bar at md+.
+//
+// Usage:
+//   @components.MobileFilter() {
+//     <form ...>...</form>
+//   }
+//
+// The inner content is rendered inside the <details> element. Tailwind
+// arbitrary variants force the children to display on md+ regardless of
+// the [open] state.
+templ MobileFilter() {
+  <details
+    class="mb-3 md:mb-0 md:[&>summary]:hidden md:[&>summary]:!hidden md:[&>:not(summary)]:!block"
+  >
+    <summary class="md:hidden flex items-center justify-between gap-2 px-3 py-2 mb-2 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 cursor-pointer select-none">
+      <span class="inline-flex items-center gap-2">
+        @templ.Raw(`<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>`)
+        <span>Filter</span>
+      </span>
+      @templ.Raw(`<svg class="transition-transform group-open:rotate-180" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`)
+    </summary>
+    { children... }
+  </details>
+}

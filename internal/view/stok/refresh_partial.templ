@@ -1,0 +1,81 @@
+package stok
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/repo"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+)
+
+// RefreshPartialProps - props untuk partial auto-refresh tabel stok.
+type RefreshPartialProps struct {
+  GudangID     int64
+  Rows         []repo.StokDetail
+  Total        int
+  Page         int
+  TotalPages   int
+  Query        string
+  Kategori     string
+  LowStockOnly bool
+  UpdatedAt    string
+}
+
+// RefreshPartial - tabel stok + footer pagination, target swap untuk hx-trigger
+// every 30s. Tidak include AppShell.
+templ RefreshPartial(p RefreshPartialProps) {
+  <div hx-get={ refreshURL(p) }
+       hx-trigger="every 30s"
+       hx-target="this"
+       hx-swap="innerHTML"
+       hx-indicator="#stok-refresh-indicator">
+    <div class="flex items-center justify-between px-4 py-2 text-xs text-slate-500 border-b border-slate-100">
+      <span>Auto-refresh setiap 30 detik</span>
+      <span class="flex items-center gap-2">
+        <span id="stok-refresh-indicator" class="htmx-indicator inline-flex items-center gap-1 text-brand-600">
+          @icon.Render("loader-2", 12, "animate-spin")
+          <span>Updating...</span>
+        </span>
+        if p.UpdatedAt != "" {
+          <span>· { p.UpdatedAt }</span>
+        }
+      </span>
+    </div>
+    @components.Card(components.CardProps{ NoPad: true }) {
+      if len(p.Rows) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "package",
+          Title: "Belum ada data stok",
+          Description: "Stok akan muncul setelah ada penerimaan barang atau mutasi masuk.",
+        })
+      } else {
+        @stokTable(p.Rows)
+        @refreshFooter(p)
+      }
+    }
+  </div>
+}
+
+templ refreshFooter(p RefreshPartialProps) {
+  <div class="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm text-slate-600">
+    <div>{ fmt.Sprintf("Total %d produk · halaman %d dari %d", p.Total, p.Page, p.TotalPages) }</div>
+  </div>
+}
+
+func refreshURL(p RefreshPartialProps) string {
+  u := "/stok/refresh?gudang_id=" + strconv.FormatInt(p.GudangID, 10)
+  if p.Page > 0 {
+    u += "&page=" + strconv.Itoa(p.Page)
+  }
+  if p.Query != "" {
+    u += "&q=" + p.Query
+  }
+  if p.Kategori != "" {
+    u += "&kategori=" + p.Kategori
+  }
+  if p.LowStockOnly {
+    u += "&low=1"
+  }
+  return u
+}

@@ -1,0 +1,27 @@
+package layout
+
+// AuthLayout dipakai untuk halaman login (tidak ada sidebar/topbar).
+// Layout: full-bleed soft gradient dengan card di tengah.
+templ AuthLayout(props AuthLayoutProps) {
+  <!DOCTYPE html>
+  <html lang="id">
+    <head>
+      <meta charset="utf-8"/>
+      <meta name="viewport" content="width=device-width, initial-scale=1"/>
+      <meta name="color-scheme" content="light"/>
+      <title>{ props.Title } - Tokobangunan</title>
+      <link rel="stylesheet" href="/static/css/app.css"/>
+      <script src="/static/js/htmx.min.js" defer></script>
+      <script src="/static/js/app.js" defer></script>
+      <script src="/static/js/alpine.min.js" defer></script>
+    </head>
+    <body class="min-h-screen bg-gradient-soft text-slate-900 antialiased">
+      <main class="min-h-screen flex items-center justify-center p-4">
+        <div class="w-full max-w-sm">
+          { children... }
+        </div>
+      </main>
+      @ToastContainer()
+    </body>
+  </html>
+}

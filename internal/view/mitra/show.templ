@@ -1,0 +1,146 @@
+package mitra
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Show(p ShowProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Detail Mitra",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Mitra", Href: "/mitra" },
+      { Label: p.Item.Nama },
+    },
+  }) {
+    @components.PageHeader(p.Item.Nama, "Profil mitra & riwayat transaksi.") {
+      @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: fmt.Sprintf("/mitra/%d/edit", p.Item.ID) }) {
+        @icon.Pencil(16, "")
+        <span>Edit</span>
+      }
+    }
+
+    <!-- Profile summary -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+      <div class="lg:col-span-2">
+        @components.Card(components.CardProps{ Title: "Informasi Mitra" }) {
+          <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+            @dlRow("Kode", p.Item.Kode)
+            @dlRow("Tipe", TipeLabel(p.Item.Tipe))
+            @dlRow("Kontak", StringOrDash(p.Item.Kontak))
+            @dlRow("NPWP", StringOrDash(p.Item.NPWP))
+            @dlRow("Limit Kredit", limitText(p.Item.LimitKredit))
+            @dlRow("Jatuh Tempo", strconv.Itoa(p.Item.JatuhTempoHari) + " hari")
+            <div class="sm:col-span-2">
+              <dt class="text-xs uppercase tracking-wide text-slate-500">Alamat</dt>
+              <dd class="mt-1 text-slate-800 whitespace-pre-line">{ StringOrDash(p.Item.Alamat) }</dd>
+            </div>
+            if p.Item.Catatan != nil && *p.Item.Catatan != "" {
+              <div class="sm:col-span-2">
+                <dt class="text-xs uppercase tracking-wide text-slate-500">Catatan</dt>
+                <dd class="mt-1 text-slate-800 whitespace-pre-line">{ *p.Item.Catatan }</dd>
+              </div>
+            }
+          </dl>
+        }
+      </div>
+      <div>
+        @components.Card(components.CardProps{ Title: "Status" }) {
+          <div class="space-y-3 text-sm">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-500">Status akun</span>
+              if p.Item.IsActive {
+                @components.BadgeWithDot("Aktif", "success")
+              } else {
+                @components.BadgeWithDot("Nonaktif", "default")
+              }
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-slate-500">Tipe</span>
+              @components.Badge(TipeLabel(p.Item.Tipe), TipeBadgeVariant(p.Item.Tipe))
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-slate-500">Limit kredit</span>
+              <span class="font-mono tabular-nums text-slate-900">{ limitText(p.Item.LimitKredit) }</span>
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="mb-4 border-b border-slate-200">
+      <nav class="flex gap-1" aria-label="Tabs">
+        @tabLink("info", "Info", p.Item.ID, p.Active)
+        @tabLink("transaksi", "Transaksi", p.Item.ID, p.Active)
+        @tabLink("piutang", "Piutang", p.Item.ID, p.Active)
+        @tabLink("pembayaran", "Pembayaran", p.Item.ID, p.Active)
+      </nav>
+    </div>
+
+    @components.Card(components.CardProps{ NoPad: true }) {
+      <div class="p-4">
+        if p.Active == "info" || p.Active == "" {
+          <p class="text-sm text-slate-600">
+            Detail informasi mitra ditampilkan di kartu di atas. Untuk mengubah data, klik
+            <span class="font-medium">Edit</span>.
+          </p>
+        } else {
+          @components.EmptyState(components.EmptyStateProps{
+            IconName: "inbox",
+            Title: "Modul belum aktif",
+            Description: tabPlaceholderMsg(p.Active),
+          })
+        }
+      </div>
+    }
+  }
+}
+
+templ dlRow(label, value string) {
+  <div>
+    <dt class="text-xs uppercase tracking-wide text-slate-500">{ label }</dt>
+    <dd class="mt-1 text-slate-800">{ value }</dd>
+  </div>
+}
+
+templ tabLink(key, label string, id int64, active string) {
+  <a href={ templ.SafeURL(fmt.Sprintf("/mitra/%d?tab=%s", id, key)) }
+     class={ "px-3 py-2 text-sm border-b-2 -mb-px", tabActiveClass(key, active) }>
+    { label }
+  </a>
+}
+
+func tabActiveClass(key, active string) string {
+  if key == active || (key == "info" && active == "") {
+    return "border-brand-600 text-brand-700 font-medium"
+  }
+  return "border-transparent text-slate-500 hover:text-slate-800"
+}
+
+func tabPlaceholderMsg(tab string) string {
+  switch tab {
+  case "transaksi":
+    return "Riwayat penjualan mitra akan tampil setelah modul penjualan aktif."
+  case "piutang":
+    return "Daftar piutang outstanding akan tampil setelah modul penjualan aktif."
+  case "pembayaran":
+    return "Riwayat pembayaran akan tampil setelah modul pembayaran aktif."
+  default:
+    return "Modul ini belum tersedia."
+  }
+}
+
+func limitText(cents int64) string {
+  if cents <= 0 {
+    return "Tanpa limit"
+  }
+  return format.Rupiah(cents)
+}

@@ -1,0 +1,25 @@
+package components
+
+// CardProps - container baseline (rounded-xl, border, shadow-xs, padding 6).
+type CardProps struct {
+  Class    string
+  NoPad    bool // bila true, tidak tambah p-6
+  Title    string
+  Subtitle string
+}
+
+templ Card(p CardProps) {
+  <div class={ "card", cardPad(p.NoPad), p.Class }>
+    if p.Title != "" || p.Subtitle != "" {
+      <div class="mb-4">
+        if p.Title != "" {
+          <h3 class="text-base font-semibold text-slate-900">{ p.Title }</h3>
+        }
+        if p.Subtitle != "" {
+          <p class="text-sm text-slate-500 mt-0.5">{ p.Subtitle }</p>
+        }
+      </div>
+    }
+    { children... }
+  </div>
+}

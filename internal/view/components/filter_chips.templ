@@ -1,0 +1,23 @@
+package components
+
+// FilterChips - chip preset filter di atas tabel.
+// `presets` array preset; `current` cocok dengan FilterPreset.Key untuk active state.
+templ FilterChips(presets []FilterPreset, current string) {
+  if len(presets) > 0 {
+    <div class="flex flex-wrap gap-2 mb-3">
+      for _, p := range presets {
+        if p.Key == current {
+          <a
+            href={ templ.SafeURL(p.URL) }
+            class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border bg-brand-50 text-brand-700 border-brand-200"
+          >{ p.Label }</a>
+        } else {
+          <a
+            href={ templ.SafeURL(p.URL) }
+            class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+          >{ p.Label }</a>
+        }
+      }
+    </div>
+  }
+}
