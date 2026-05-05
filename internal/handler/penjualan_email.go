@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 
@@ -103,14 +105,22 @@ func (h *PenjualanEmailHandler) EmailKwitansi(c echo.Context) error {
 	}
 
 	sender := email.NewSender(email.Config{
-		Host:     smtpCfg.Host,
-		Port:     smtpCfg.Port,
-		Username: smtpCfg.Username,
-		Password: smtpCfg.Password,
-		From:     smtpCfg.From,
+		Host:         smtpCfg.Host,
+		Port:         smtpCfg.Port,
+		Username:     smtpCfg.Username,
+		Password:     smtpCfg.Password,
+		From:         smtpCfg.From,
+		TLSVerify:    true,
+		Timeout:      30 * time.Second,
+		MaxRetries:   3,
+		RetryBackoff: 2 * time.Second,
 	})
 	filename := "kwitansi-" + sanitizeFilename(pj.NomorKwitansi) + ".pdf"
-	err = sender.Send(email.Message{
+	// Bound total send time supaya request handler tidak ngegantung.
+	// Budget: timeout(30s) * retries(3) + backoffs ~= ~100s worst-case.
+	sendCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	defer cancel()
+	err = sender.SendCtx(sendCtx, email.Message{
 		To:       to,
 		Subject:  subject,
 		BodyText: defaultMsg,

@@ -9,6 +9,7 @@ templ AuthLayout(props AuthLayoutProps) {
       <meta charset="utf-8"/>
       <meta name="viewport" content="width=device-width, initial-scale=1"/>
       <meta name="color-scheme" content="light"/>
+      <meta name="description" content={ descOrDefault(props.Description) }/>
       <title>{ props.Title } - Tokobangunan</title>
       <link rel="stylesheet" href="/static/css/app.css"/>
       <style>[x-cloak]{display:none !important}</style>

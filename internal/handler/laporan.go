@@ -13,6 +13,7 @@ import (
 	"github.com/jung-kurt/gofpdf"
 	"github.com/labstack/echo/v4"
 	"github.com/xuri/excelize/v2"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/omanjaya/tokobangunan/internal/auth"
 	"github.com/omanjaya/tokobangunan/internal/domain"
@@ -86,13 +87,24 @@ func (h *LaporanHandler) Penjualan(c echo.Context) error {
 		From: from, To: to, GudangID: gudangID, MitraID: mitraID,
 		Page: page, PerPage: 50,
 	}
-	rows, total, err := h.laporan.Penjualan(c.Request().Context(), filter)
-	if err != nil {
-		return err
-	}
-
-	gudangs, err := h.gudangLite(c)
-	if err != nil {
+	// Parallelize report query + gudang dropdown lookup.
+	var (
+		rows    []repo.LaporanPenjualanRow
+		total   int
+		gudangs []laporan.GudangLite
+	)
+	g, gctx := errgroup.WithContext(c.Request().Context())
+	g.Go(func() error {
+		var e error
+		rows, total, e = h.laporan.Penjualan(gctx, filter)
+		return e
+	})
+	g.Go(func() error {
+		var e error
+		gudangs, e = h.gudangLiteCtx(gctx)
+		return e
+	})
+	if err := g.Wait(); err != nil {
 		return err
 	}
 
@@ -1041,7 +1053,11 @@ func (h *LaporanHandler) ExportCashflowXLSX(c echo.Context) error {
 }
 
 func (h *LaporanHandler) gudangLite(c echo.Context) ([]laporan.GudangLite, error) {
-	list, err := h.gudang.List(c.Request().Context(), false)
+	return h.gudangLiteCtx(c.Request().Context())
+}
+
+func (h *LaporanHandler) gudangLiteCtx(ctx context.Context) ([]laporan.GudangLite, error) {
+	list, err := h.gudang.List(ctx, false)
 	if err != nil {
 		return nil, err
 	}

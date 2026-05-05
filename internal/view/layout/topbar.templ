@@ -31,7 +31,7 @@ templ TopBar(user UserData, crumbs []BreadcrumbItem) {
     >
       <label class="relative block">
         <span class="sr-only">Cari</span>
-        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500">
           @icon.Search(16, "")
         </span>
         <input
@@ -53,8 +53,8 @@ templ TopBar(user UserData, crumbs []BreadcrumbItem) {
           hx-include="this"
           @htmx:after-swap="onResults()"
         />
-        <span class="absolute inset-y-0 right-0 flex items-center pr-2 text-slate-400">
-          <kbd class="hidden lg:inline-flex items-center rounded border border-slate-200 bg-white px-1.5 text-2xs font-mono text-slate-500">Ctrl K</kbd>
+        <span class="absolute inset-y-0 right-0 flex items-center pr-2 text-slate-500">
+          <kbd class="hidden lg:inline-flex items-center rounded border border-slate-200 bg-white px-1.5 text-2xs font-mono text-slate-600">Ctrl K</kbd>
         </span>
       </label>
       <div id="search-results" x-show="showResults" x-cloak class="relative"></div>

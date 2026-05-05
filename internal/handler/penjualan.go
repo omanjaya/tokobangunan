@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/omanjaya/tokobangunan/internal/auth"
 	"github.com/omanjaya/tokobangunan/internal/domain"
@@ -80,17 +81,33 @@ func (h *PenjualanHandler) Index(c echo.Context) error {
 	}
 	filter.Query = strings.TrimSpace(c.QueryParam("q"))
 
-	page1, err := h.penjualan.ListWithRelations(ctx, filter)
-	if err != nil {
+	// Parallelize list query + gudang dropdown (independent).
+	var (
+		page1   service.PageResult[repo.PenjualanWithRelations]
+		gudangs []penjualanview.GudangLite
+	)
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		var e error
+		page1, e = h.penjualan.ListWithRelations(gctx, filter)
+		return e
+	})
+	g.Go(func() error {
+		list, e := h.gudang.List(gctx, false)
+		if e != nil {
+			return e
+		}
+		gudangs = make([]penjualanview.GudangLite, 0, len(list))
+		for _, gg := range list {
+			gudangs = append(gudangs, penjualanview.GudangLite{ID: gg.ID, Kode: gg.Kode, Nama: gg.Nama})
+		}
+		return nil
+	})
+	if err := g.Wait(); err != nil {
 		return err
 	}
 
 	rows := buildRowsFromRelations(page1.Items)
-
-	gudangs, err := h.gudangLite(c)
-	if err != nil {
-		return err
-	}
 
 	gudangID := int64(0)
 	if filter.GudangID != nil {

@@ -73,7 +73,7 @@ templ sidebarLink(item NavItem) {
     </a>
   } else {
     <a href={ templ.SafeURL(item.Href) } class="nav-item" @click="sidebarOpen = false">
-      @icon.Render(item.IconName, 18, "shrink-0 text-slate-400")
+      @icon.Render(item.IconName, 18, "shrink-0 text-slate-500")
       <span class="flex-1">{ item.Label }</span>
       if item.Badge != "" {
         <span class="text-xs font-mono px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600">{ item.Badge }</span>

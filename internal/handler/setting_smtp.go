@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 
@@ -88,13 +90,20 @@ func (h *SettingSMTPHandler) Test(c echo.Context) error {
 		return c.Redirect(http.StatusSeeOther, "/setting/smtp?error=SMTP+belum+diaktifkan")
 	}
 	sender := email.NewSender(email.Config{
-		Host:     cfg.Host,
-		Port:     cfg.Port,
-		Username: cfg.Username,
-		Password: cfg.Password,
-		From:     cfg.From,
+		Host:         cfg.Host,
+		Port:         cfg.Port,
+		Username:     cfg.Username,
+		Password:     cfg.Password,
+		From:         cfg.From,
+		TLSVerify:    true,
+		// Test SMTP: lebih agresif (1 attempt, timeout pendek) supaya UI cepat respond.
+		Timeout:      15 * time.Second,
+		MaxRetries:   1,
+		RetryBackoff: time.Second,
 	})
-	err = sender.Send(email.Message{
+	sendCtx, cancel := context.WithTimeout(c.Request().Context(), 20*time.Second)
+	defer cancel()
+	err = sender.SendCtx(sendCtx, email.Message{
 		To:       to,
 		Subject:  "Test Email - Tokobangunan",
 		BodyText: "Ini email test dari aplikasi Tokobangunan. Jika Anda menerima email ini, konfigurasi SMTP sudah berfungsi.",

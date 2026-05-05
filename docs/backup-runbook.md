@@ -50,22 +50,45 @@ Log baris berformat `[YYYY-MM-DD HH:MM:SS] ...`.
 
 ## 3. Install cron
 
-```bash
-bash scripts/install-cron.sh                 # default: 0 2 * * *
-CRON_TIME="0 3 * * *" bash scripts/install-cron.sh
-crontab -l                                   # verify
-bash scripts/install-cron.sh --remove
-```
+Cron tidak inherit shell env, jadi `BACKUP_PASSPHRASE` / `BACKUP_SSH_*` harus
+di-load eksplisit. `install-cron.sh` sekarang install line yang panggil
+wrapper `scripts/backup-cron.sh` — wrapper itu source `.env.backup` (atau
+`.env`) sebelum exec `backup.sh`.
 
-Cron memakai env dari shell saat `bash scripts/backup.sh` jalan — pastikan
-`.env` di-load via wrapper, atau export di crontab line. Contoh wrapper:
+### Setup
+1. Buat `.env.backup` di root project (lebih aman dari `.env` runtime):
 
-```cron
-0 2 * * * cd /path/tokobangunan && set -a && . ./.env && set +a && bash scripts/backup.sh >> backups/backup.log 2>&1
-```
+   ```bash
+   cat > .env.backup <<'EOF'
+   BACKUP_PASSPHRASE=ganti-dengan-passphrase-kuat
+   BACKUP_SSH_HOST=185.214.124.85
+   BACKUP_SSH_PORT=65002
+   BACKUP_SSH_USER=u212852160
+   BACKUP_SSH_KEY=/Users/omanjaya/.ssh/hostinger_scriptsis
+   BACKUP_REMOTE_DIR=~/domains/scriptsis.id/public_html/backups/tokobangunan/
+   BACKUP_RETAIN_DAYS=30
+   BACKUP_RETAIN_COUNT=30
+   EOF
+   chmod 600 .env.backup
+   ```
 
-Default `install-cron.sh` belum auto-load `.env` — edit kalau perlu encrypt +
-upload otomatis.
+   `BACKUP_SSH_KEY` **harus absolute path** — cron tidak expand `~`.
+
+2. Install cron:
+
+   ```bash
+   bash scripts/install-cron.sh                 # default: 0 2 * * *
+   CRON_TIME="0 3 * * *" bash scripts/install-cron.sh
+   crontab -l                                   # verify
+   bash scripts/install-cron.sh --remove
+   ```
+
+3. (Opsional) Test wrapper manual sebelum tunggu cron fire:
+
+   ```bash
+   bash scripts/backup-cron.sh
+   tail -n 30 backups/backup.log
+   ```
 
 Log default: `./backups/backup.log`.
 
@@ -146,3 +169,18 @@ Failure → buka issue manual; biasanya schema drift atau migration ordering.
 | `gpg: decryption failed` | passphrase salah / corrupt download |
 | Cron tidak jalan | `grep CRON /var/log/syslog`, env tidak ter-load → pakai wrapper |
 | File `.dump` 0 byte | container DB down saat dump → cek log container |
+
+## Live drill log
+
+### 2026-05-06 — Initial activation drill
+
+| Step | Result | Detail |
+| --- | --- | --- |
+| Manual backup | PASS | `./backups/tokobangunan_20260506_033359.dump` 663K, ~0.3s |
+| SSH connect Hostinger | PASS | `u212852160@185.214.124.85:65002`, key `~/.ssh/hostinger_scriptsis` |
+| SCP off-host upload | PASS | `~/backups/tokobangunan/tokobangunan_20260506_033413.dump` 678766 bytes, total ~1.8s |
+| GPG encrypt (AES256) | PASS | `tokobangunan_20260506_033425.dump.gz.gpg` 502K (gz+gpg), total ~2.8s |
+| Decrypt verify | PASS | `gpg --decrypt | gunzip | head` → `PGDMP` magic confirmed |
+| Cron install | DEFERRED | dry-run only; awaiting operator approval before `bash scripts/install-cron.sh` |
+
+Logs di `/tmp/audit/backup-{test,scp,gpg}.log`.

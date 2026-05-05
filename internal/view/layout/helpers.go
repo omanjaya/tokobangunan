@@ -15,6 +15,15 @@ func CSPNonce(ctx context.Context) string {
 	return appmw.CSPNonce(ctx)
 }
 
+// descOrDefault mengembalikan meta description dengan fallback generic
+// bila string kosong. Dipakai di <head> AppShell / AuthLayout.
+func descOrDefault(d string) string {
+	if d == "" {
+		return "Tokobangunan ERP — sistem manajemen toko bahan bangunan"
+	}
+	return d
+}
+
 // brandSlug mengembalikan slug pendek (2-3 char) untuk avatar logo.
 func brandSlug(nav NavData) string {
 	if nav.BrandSlug != "" {

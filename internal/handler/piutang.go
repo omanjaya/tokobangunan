@@ -7,8 +7,10 @@ import (
 	"strings"
 
 	"github.com/labstack/echo/v4"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/omanjaya/tokobangunan/internal/auth"
+	"github.com/omanjaya/tokobangunan/internal/domain"
 	"github.com/omanjaya/tokobangunan/internal/repo"
 	"github.com/omanjaya/tokobangunan/internal/service"
 	"github.com/omanjaya/tokobangunan/internal/view/layout"
@@ -42,15 +44,30 @@ func (h *PiutangHandler) Index(c echo.Context) error {
 		f.Aging = &aging
 	}
 
-	res, err := h.svc.Summary(ctx, f)
-	if err != nil {
-		slog.ErrorContext(ctx, "list piutang failed", "error", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "Gagal memuat daftar piutang")
-	}
-	buckets, err := h.svc.AgingBuckets(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "aging buckets failed", "error", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "Gagal menghitung aging")
+	// Parallelize Summary (heavy FIFO aggregate) + AgingBuckets.
+	var (
+		res     service.PageResult[domain.PiutangSummary]
+		buckets map[domain.PiutangAging]int64
+	)
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		var e error
+		res, e = h.svc.Summary(gctx, f)
+		if e != nil {
+			slog.ErrorContext(gctx, "list piutang failed", "error", e)
+		}
+		return e
+	})
+	g.Go(func() error {
+		var e error
+		buckets, e = h.svc.AgingBuckets(gctx)
+		if e != nil {
+			slog.ErrorContext(gctx, "aging buckets failed", "error", e)
+		}
+		return e
+	})
+	if err := g.Wait(); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "Gagal memuat data piutang")
 	}
 
 	props := piutangview.IndexProps{

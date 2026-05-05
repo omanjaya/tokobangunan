@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/omanjaya/tokobangunan/internal/auth"
 	"github.com/omanjaya/tokobangunan/internal/repo"
 )
@@ -60,34 +62,61 @@ func (s *LaporanService) Dashboard(ctx context.Context, user *auth.User) (*Dashb
 		}
 	}
 
-	kpi, err := s.laporan.GetDashboardKPI(ctx, gudangID)
-	if err != nil {
-		return nil, err
-	}
-	sales, err := s.laporan.SalesLast30Days(ctx, gudangID)
-	if err != nil {
-		return nil, err
-	}
 	to := time.Now()
 	from := to.AddDate(0, 0, -29)
-	topMitra, err := s.laporan.TopMitraPeriod(ctx, from, to, 5)
-	if err != nil {
-		return nil, err
-	}
-	stokKritis, err := s.laporan.StokKritisAll(ctx)
-	if err != nil {
+
+	// Parallelize 7 aggregate queries — pool conn (default 20) cukup.
+	// Total latency = max(query) bukan sum, ~5x speedup di dashboard cold.
+	var (
+		kpi          *repo.DashboardKPI
+		sales        []repo.SalesPerDay
+		topMitra     []repo.TopMitra
+		stokKritis   []repo.StokKritisRow
+		recent       []repo.LaporanPenjualanRow
+		recentBayar  []repo.RecentPembayaranRow
+		recentMutasi []repo.RecentMutasiRow
+	)
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		var e error
+		kpi, e = s.laporan.GetDashboardKPI(gctx, gudangID)
+		return e
+	})
+	g.Go(func() error {
+		var e error
+		sales, e = s.laporan.SalesLast30Days(gctx, gudangID)
+		return e
+	})
+	g.Go(func() error {
+		var e error
+		topMitra, e = s.laporan.TopMitraPeriod(gctx, from, to, 5)
+		return e
+	})
+	g.Go(func() error {
+		var e error
+		stokKritis, e = s.laporan.StokKritisAll(gctx)
+		return e
+	})
+	g.Go(func() error {
+		var e error
+		recent, e = s.laporan.RecentTransaksi(gctx, gudangID, 10)
+		return e
+	})
+	// Best-effort — jangan gagalkan dashboard kalau dua ini error.
+	g.Go(func() error {
+		recentBayar, _ = s.laporan.RecentPembayaran(gctx, 5)
+		return nil
+	})
+	g.Go(func() error {
+		recentMutasi, _ = s.laporan.RecentMutasi(gctx, 5)
+		return nil
+	})
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 	if len(stokKritis) > 10 {
 		stokKritis = stokKritis[:10]
 	}
-	recent, err := s.laporan.RecentTransaksi(ctx, gudangID, 10)
-	if err != nil {
-		return nil, err
-	}
-	// Recent payments & mutations — best effort (jangan gagalkan dashboard).
-	recentBayar, _ := s.laporan.RecentPembayaran(ctx, 5)
-	recentMutasi, _ := s.laporan.RecentMutasi(ctx, 5)
 
 	return &DashboardData{
 		KPI:              kpi,

@@ -41,15 +41,17 @@ type UserData struct {
 
 // AppShellProps adalah parameter untuk AppShell.
 type AppShellProps struct {
-	Title      string
-	Nav        NavData
-	User       UserData
-	Breadcrumb []BreadcrumbItem
+	Title       string
+	Description string // optional meta description; default ke generic bila kosong
+	Nav         NavData
+	User        UserData
+	Breadcrumb  []BreadcrumbItem
 }
 
 // AuthLayoutProps adalah parameter untuk AuthLayout (tanpa sidebar).
 type AuthLayoutProps struct {
-	Title string
+	Title       string
+	Description string // optional meta description
 }
 
 // DefaultNav membangun navigasi default Fase 1.
