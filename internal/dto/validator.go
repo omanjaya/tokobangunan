@@ -19,6 +19,15 @@ func Validate(s any) error {
 // FieldErrors memetakan nama field (lowercase) → pesan error human-friendly.
 type FieldErrors map[string]string
 
+// Error mengimplementasikan interface error sehingga FieldErrors bisa
+// di-return langsung dari service. Pesan ringkas: "validasi gagal".
+func (f FieldErrors) Error() string {
+	if len(f) == 0 {
+		return ""
+	}
+	return "validasi gagal"
+}
+
 // CollectFieldErrors konversi error validator menjadi map per field.
 // Return (nil, false) bila err bukan validator.ValidationErrors.
 func CollectFieldErrors(err error) (FieldErrors, bool) {

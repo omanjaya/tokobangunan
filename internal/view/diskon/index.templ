@@ -1,0 +1,119 @@
+package diskonview
+
+import (
+  "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+type IndexProps struct {
+  Nav       layout.NavData
+  User      layout.UserData
+  Items     []domain.DiskonMaster
+  CSRFToken string
+}
+
+templ Index(p IndexProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Diskon",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Pengaturan", Href: "/setting" },
+      { Label: "Diskon" },
+    },
+  }) {
+    @components.PageHeader("Master Diskon", "Katalog diskon yang bisa di-apply di POS.") {
+      @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Href: "/setting/diskon/baru" }) {
+        @icon.Plus(16, "")
+        <span>Tambah Diskon</span>
+      }
+    }
+
+    @components.Card(components.CardProps{ NoPad: true }) {
+      if len(p.Items) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "receipt",
+          Title: "Belum ada diskon",
+          Description: "Klik 'Tambah Diskon' untuk membuat promo baru.",
+        })
+      } else {
+        @table(p)
+      }
+    }
+  }
+}
+
+templ table(p IndexProps) {
+  <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-sm">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Kode</th>
+          <th class="px-4 py-3 text-left font-medium">Nama</th>
+          <th class="px-4 py-3 text-left font-medium">Tipe</th>
+          <th class="px-4 py-3 text-right font-medium">Nilai</th>
+          <th class="px-4 py-3 text-right font-medium">Min Subtotal</th>
+          <th class="px-4 py-3 text-right font-medium">Max Diskon</th>
+          <th class="px-4 py-3 text-left font-medium">Berlaku</th>
+          <th class="px-4 py-3 text-left font-medium">Status</th>
+          <th class="px-4 py-3 text-right font-medium">Aksi</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 bg-white">
+        for _, d := range p.Items {
+          @row(d, p.CSRFToken)
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+templ row(d domain.DiskonMaster, csrf string) {
+  <tr>
+    <td class="px-4 py-3 font-mono text-slate-900">{ d.Kode }</td>
+    <td class="px-4 py-3 font-medium text-slate-900">{ d.Nama }</td>
+    <td class="px-4 py-3 text-slate-600">{ d.Tipe }</td>
+    <td class="px-4 py-3 text-right text-slate-900">{ fmtNilai(d) }</td>
+    <td class="px-4 py-3 text-right text-slate-600">Rp { fmtRupiahFromCents(d.MinSubtotal) }</td>
+    <td class="px-4 py-3 text-right text-slate-600">{ fmtMaxDiskon(d.MaxDiskon) }</td>
+    <td class="px-4 py-3 text-slate-600">{ fmtDate(d.BerlakuDari) } – { fmtDatePtr(d.BerlakuSampai) }</td>
+    <td class="px-4 py-3">
+      if d.IsActive {
+        @components.BadgeWithDot("Aktif", "success")
+      } else {
+        @components.BadgeWithDot("Non-aktif", "default")
+      }
+    </td>
+    <td class="px-4 py-3 text-right">
+      <div class="inline-flex items-center gap-2">
+        @components.Button(components.ButtonProps{
+          Variant: "secondary", Size: "sm",
+          Href: "/setting/diskon/" + idToStr(d.ID) + "/edit",
+        }) {
+          @icon.Pencil(14, "")
+          <span>Edit</span>
+        }
+        @toggleForm(d, csrf)
+      </div>
+    </td>
+  </tr>
+}
+
+templ toggleForm(d domain.DiskonMaster, csrf string) {
+  <form method="post" action={ templ.SafeURL("/setting/diskon/" + idToStr(d.ID) + "/toggle") } class="inline">
+    <input type="hidden" name="csrf_token" value={ csrf }/>
+    if d.IsActive {
+      <button type="submit" class="btn-ghost btn-sm" title="Non-aktifkan">
+        @icon.X(14, "")
+        <span>Non-aktifkan</span>
+      </button>
+    } else {
+      <button type="submit" class="btn-ghost btn-sm" title="Aktifkan">
+        @icon.Check(14, "")
+        <span>Aktifkan</span>
+      </button>
+    }
+  </form>
+}

@@ -1,0 +1,160 @@
+package diskonview
+
+import (
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/dto"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+type FormProps struct {
+  Nav       layout.NavData
+  User      layout.UserData
+  Mode      string // "create" | "edit"
+  ID        int64
+  CSRFToken string
+  Form      dto.DiskonMasterInput
+  Errors    dto.FieldErrors
+  General   string
+}
+
+templ Form(p FormProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: formTitle(p.Mode),
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Pengaturan", Href: "/setting" },
+      { Label: "Diskon", Href: "/setting/diskon" },
+      { Label: formTitle(p.Mode) },
+    },
+  }) {
+    @components.PageHeader(formTitle(p.Mode), "Master diskon untuk POS.") {}
+
+    if p.General != "" {
+      <div class="mb-4">
+        @components.Alert(components.AlertProps{ Variant: "danger", Title: "Gagal menyimpan", Message: p.General })
+      </div>
+    }
+
+    @components.Card(components.CardProps{}) {
+      <form method="post" action={ templ.SafeURL(formAction(p)) } class="space-y-4 max-w-2xl">
+        <input type="hidden" name="csrf_token" value={ p.CSRFToken }/>
+
+        @components.FormField(components.FormFieldProps{ ID: "kode", Label: "Kode", Required: true, Error: p.Errors["kode"], Helper: "Huruf kapital. Contoh: PROMO10, LEBARAN." }) {
+          @components.Input(components.InputProps{
+            ID: "kode", Name: "kode", Value: p.Form.Kode, Required: true,
+            HasError: p.Errors["kode"] != "",
+            Placeholder: "PROMO10",
+            Class: "uppercase",
+          })
+        }
+
+        @components.FormField(components.FormFieldProps{ ID: "nama", Label: "Nama", Required: true, Error: p.Errors["nama"] }) {
+          @components.Input(components.InputProps{
+            ID: "nama", Name: "nama", Value: p.Form.Nama, Required: true,
+            HasError: p.Errors["nama"] != "",
+            Placeholder: "Promo Lebaran",
+          })
+        }
+
+        @components.FormField(components.FormFieldProps{ ID: "tipe", Label: "Tipe", Required: true, Error: p.Errors["tipe"] }) {
+          <select id="tipe" name="tipe" class="input" required>
+            <option value="persen" selected?={ p.Form.Tipe == "persen" || p.Form.Tipe == "" }>Persen (%)</option>
+            <option value="nominal" selected?={ p.Form.Tipe == "nominal" }>Nominal (Rp)</option>
+          </select>
+        }
+
+        @components.FormField(components.FormFieldProps{ ID: "nilai", Label: "Nilai", Required: true, Error: p.Errors["nilai"], Helper: "Untuk persen: 0-100. Untuk nominal: rupiah utuh." }) {
+          @components.Input(components.InputProps{
+            ID: "nilai", Name: "nilai", Type: "number", Value: floatToStr(p.Form.Nilai), Required: true,
+            HasError: p.Errors["nilai"] != "",
+            Attrs: templ.Attributes{ "step": "any", "min": "0" },
+          })
+        }
+
+        @components.FormField(components.FormFieldProps{ ID: "min_subtotal", Label: "Min Subtotal (Rp)", Error: p.Errors["min_subtotal"], Helper: "Subtotal minimum agar diskon berlaku. 0 = tanpa minimum." }) {
+          @components.Input(components.InputProps{
+            ID: "min_subtotal", Name: "min_subtotal", Type: "number", Value: int64ToStr(p.Form.MinSubtotal),
+            Prefix: "Rp",
+            Attrs: templ.Attributes{ "min": "0" },
+          })
+        }
+
+        @components.FormField(components.FormFieldProps{ ID: "max_diskon", Label: "Max Diskon (Rp)", Error: p.Errors["max_diskon"], Helper: "Cap nominal diskon. 0 = tanpa cap." }) {
+          @components.Input(components.InputProps{
+            ID: "max_diskon", Name: "max_diskon", Type: "number", Value: int64ToStr(p.Form.MaxDiskon),
+            Prefix: "Rp",
+            Attrs: templ.Attributes{ "min": "0" },
+          })
+        }
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          @components.FormField(components.FormFieldProps{ ID: "berlaku_dari", Label: "Berlaku Dari", Required: true, Error: p.Errors["berlaku_dari"] }) {
+            @components.Input(components.InputProps{
+              ID: "berlaku_dari", Name: "berlaku_dari", Type: "date", Value: p.Form.BerlakuDari, Required: true,
+              HasError: p.Errors["berlaku_dari"] != "",
+            })
+          }
+          @components.FormField(components.FormFieldProps{ ID: "berlaku_sampai", Label: "Berlaku Sampai", Error: p.Errors["berlaku_sampai"], Helper: "Kosongkan = tanpa batas." }) {
+            @components.Input(components.InputProps{
+              ID: "berlaku_sampai", Name: "berlaku_sampai", Type: "date", Value: p.Form.BerlakuSampai,
+              HasError: p.Errors["berlaku_sampai"] != "",
+            })
+          }
+        </div>
+
+        <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+          if p.Form.IsActive {
+            <input type="checkbox" name="is_active" value="on" checked
+                   class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+          } else {
+            <input type="checkbox" name="is_active" value="on"
+                   class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+          }
+          <span>Aktif</span>
+        </label>
+
+        <div class="flex items-center gap-2 pt-2">
+          @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {
+            @icon.Check(16, "")
+            <span>Simpan</span>
+          }
+          @components.Button(components.ButtonProps{ Variant: "secondary", Size: "md", Href: "/setting/diskon" }) {
+            <span>Batal</span>
+          }
+        </div>
+      </form>
+    }
+  }
+}
+
+func formTitle(mode string) string {
+  if mode == "edit" {
+    return "Edit Diskon"
+  }
+  return "Tambah Diskon"
+}
+
+func formAction(p FormProps) string {
+  if p.Mode == "edit" {
+    return "/setting/diskon/" + idToStr(p.ID)
+  }
+  return "/setting/diskon"
+}
+
+func floatToStr(v float64) string {
+  if v == 0 {
+    return ""
+  }
+  return strconv.FormatFloat(v, 'f', -1, 64)
+}
+
+func int64ToStr(v int64) string {
+  if v == 0 {
+    return ""
+  }
+  return strconv.FormatInt(v, 10)
+}

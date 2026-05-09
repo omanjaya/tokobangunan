@@ -607,6 +607,22 @@ func registerSettingRoutes(g *echo.Group, pool *pgxpool.Pool, appSettingSvc *ser
 	sm.GET("", smtpH.Show)
 	sm.POST("", smtpH.Update)
 	sm.POST("/test", smtpH.Test)
+
+	// Master Diskon (owner+admin)
+	diskonRepo := repo.NewDiskonMasterRepo(pool)
+	diskonSvc := service.NewDiskonMasterService(diskonRepo)
+	diskonH := handler.NewDiskonMasterHandler(diskonSvc)
+	dk := g.Group("/setting/diskon", auth.RequireRole("owner", "admin"))
+	dk.GET("", diskonH.Index)
+	dk.GET("/baru", diskonH.New)
+	dk.POST("", diskonH.Create)
+	dk.GET("/:id/edit", diskonH.Edit)
+	dk.POST("/:id", diskonH.Update)
+	dk.POST("/:id/toggle", diskonH.Toggle)
+	dk.POST("/:id/delete", diskonH.Delete)
+
+	// JSON endpoint utk POS (semua user authenticated boleh akses).
+	g.GET("/penjualan/diskon-applicable", diskonH.Applicable)
 }
 
 
