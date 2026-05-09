@@ -11,6 +11,7 @@ import (
 
 	"github.com/omanjaya/tokobangunan/internal/domain"
 	"github.com/omanjaya/tokobangunan/internal/dto"
+	"github.com/omanjaya/tokobangunan/internal/format"
 	"github.com/omanjaya/tokobangunan/internal/repo"
 )
 
@@ -113,8 +114,8 @@ func (s *StokAdjustmentService) Create(
 			return fmt.Errorf("lock stok: %w", err)
 		default:
 			if qtyKonversi < 0 && current+qtyKonversi < 0 {
-				return fmt.Errorf("%w: produk %d (tersedia %.4f, butuh %.4f)",
-					domain.ErrAdjStokTidakCukup, in.ProdukID, current, -qtyKonversi)
+				return fmt.Errorf("%w: produk %d (tersedia %s, butuh %s)",
+					domain.ErrAdjStokTidakCukup, in.ProdukID, format.Qty(current), format.Qty(-qtyKonversi))
 			}
 		}
 

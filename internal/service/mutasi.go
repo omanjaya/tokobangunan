@@ -11,6 +11,7 @@ import (
 
 	"github.com/omanjaya/tokobangunan/internal/domain"
 	"github.com/omanjaya/tokobangunan/internal/dto"
+	"github.com/omanjaya/tokobangunan/internal/format"
 	"github.com/omanjaya/tokobangunan/internal/repo"
 )
 
@@ -195,8 +196,8 @@ func (s *MutasiService) Submit(ctx context.Context, id, userID int64) error {
 				}
 			}
 			if current < qtyNeed {
-				return fmt.Errorf("%w: produk %d (tersedia %.4f, butuh %.4f)",
-					domain.ErrStokTidakCukup, produkID, current, qtyNeed)
+				return fmt.Errorf("%w: produk %d (tersedia %s, butuh %s)",
+					domain.ErrStokTidakCukup, produkID, format.Qty(current), format.Qty(qtyNeed))
 			}
 		}
 		return s.mutasi.UpdateStatusInTx(ctx, tx, id, domain.StatusDraft, domain.StatusDikirim, userID)

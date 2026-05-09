@@ -12,6 +12,7 @@ import (
 
 	"github.com/omanjaya/tokobangunan/internal/domain"
 	"github.com/omanjaya/tokobangunan/internal/dto"
+	"github.com/omanjaya/tokobangunan/internal/format"
 	"github.com/omanjaya/tokobangunan/internal/repo"
 )
 
@@ -138,8 +139,8 @@ func (s *PenjualanService) Create(
 					break
 				}
 			}
-			return nil, fmt.Errorf("%w: %s (tersedia %.4f, butuh %.4f)",
-				domain.ErrStokTidakCukup, nama, info.Qty, qtyNeed)
+			return nil, fmt.Errorf("%w: %s (tersedia %s, butuh %s)",
+				domain.ErrStokTidakCukup, nama, format.Qty(info.Qty), format.Qty(qtyNeed))
 		}
 	}
 
