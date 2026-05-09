@@ -1,0 +1,97 @@
+package retur_penjualan
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Show(p ShowProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Detail Retur",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Transaksi" },
+      { Label: "Retur Penjualan", Href: "/retur-penjualan" },
+      { Label: p.Retur.NomorRetur },
+    },
+  }) {
+    @components.PageHeader("Detail Retur", p.Retur.NomorRetur) {}
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-2 space-y-4">
+        @components.Card(components.CardProps{ Title: "Item Diretur" }) {
+          <table class="min-w-full divide-y divide-slate-200 text-sm">
+            <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th class="px-3 py-2 text-left">Produk</th>
+                <th class="px-3 py-2 text-right">Qty</th>
+                <th class="px-3 py-2 text-left">Sat</th>
+                <th class="px-3 py-2 text-right">Harga</th>
+                <th class="px-3 py-2 text-right">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              for _, it := range p.Retur.Items {
+                <tr>
+                  <td class="px-3 py-2">{ it.ProdukNama }</td>
+                  <td class="px-3 py-2 text-right num">{ fmt.Sprintf("%g", it.Qty) }</td>
+                  <td class="px-3 py-2">{ it.SatuanKode }</td>
+                  <td class="px-3 py-2 text-right num">{ format.Rupiah(it.HargaSatuan) }</td>
+                  <td class="px-3 py-2 text-right num font-medium">{ format.Rupiah(it.Subtotal) }</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </div>
+
+      <div class="space-y-4">
+        @components.Card(components.CardProps{ Title: "Informasi" }) {
+          <dl class="text-sm space-y-2">
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Tanggal</dt>
+              <dd>{ p.Retur.Tanggal.Format("02 Jan 2006") }</dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Invoice</dt>
+              <dd>
+                if p.Penjualan != nil {
+                  <a class="text-brand-700 hover:underline font-mono" href={ templ.SafeURL("/penjualan/" + strconv.FormatInt(p.Penjualan.ID, 10)) }>
+                    { p.Penjualan.NomorKwitansi }
+                  </a>
+                }
+              </dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Mitra</dt>
+              <dd>{ p.MitraNama }</dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-slate-500">Alasan</dt>
+              <dd>{ p.Retur.Alasan }</dd>
+            </div>
+            if p.Retur.Catatan != "" {
+              <div>
+                <dt class="text-slate-500 mb-1">Catatan</dt>
+                <dd class="text-slate-700">{ p.Retur.Catatan }</dd>
+              </div>
+            }
+          </dl>
+        }
+        @components.Card(components.CardProps{ Title: "Total Refund" }) {
+          <div class="text-2xl font-bold text-rose-700 num">
+            { format.Rupiah(p.Retur.SubtotalRefund) }
+          </div>
+          <p class="text-xs text-slate-500 mt-2">
+            Refund tercatat sebagai pembayaran negatif pada invoice asal.
+          </p>
+        }
+      </div>
+    </div>
+  }
+}

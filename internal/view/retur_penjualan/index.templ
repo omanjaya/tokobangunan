@@ -1,0 +1,70 @@
+package retur_penjualan
+
+import (
+  "fmt"
+
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Index(p IndexProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Retur Penjualan",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Transaksi" },
+      { Label: "Retur Penjualan" },
+    },
+  }) {
+    @components.PageHeader("Retur Penjualan", "Daftar pengembalian barang dari customer.") {}
+
+    @components.Card(components.CardProps{ NoPad: true }) {
+      if len(p.Rows) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "rotate-ccw",
+          Title: "Belum ada retur",
+          Description: "Buat retur dari halaman detail invoice penjualan.",
+        })
+      } else {
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+          <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+            <tr>
+              <th class="px-3 py-2 text-left">Nomor Retur</th>
+              <th class="px-3 py-2 text-left">Tanggal</th>
+              <th class="px-3 py-2 text-left">Invoice</th>
+              <th class="px-3 py-2 text-left">Mitra</th>
+              <th class="px-3 py-2 text-left">Gudang</th>
+              <th class="px-3 py-2 text-right">Refund</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            for _, r := range p.Rows {
+              <tr class="hover:bg-slate-50">
+                <td class="px-3 py-2 font-mono">
+                  <a class="text-brand-700 hover:underline" href={ templ.SafeURL(fmt.Sprintf("/retur-penjualan/%d", r.Retur.ID)) }>
+                    { r.Retur.NomorRetur }
+                  </a>
+                </td>
+                <td class="px-3 py-2">{ r.Retur.Tanggal.Format("02 Jan 2006") }</td>
+                <td class="px-3 py-2 font-mono text-xs">
+                  <a class="text-slate-600 hover:underline" href={ templ.SafeURL(fmt.Sprintf("/penjualan/%d", r.Retur.PenjualanID)) }>
+                    { r.NomorKwitansi }
+                  </a>
+                </td>
+                <td class="px-3 py-2">{ r.MitraNama }</td>
+                <td class="px-3 py-2">{ r.GudangKode }</td>
+                <td class="px-3 py-2 text-right num font-medium">{ format.Rupiah(r.Retur.SubtotalRefund) }</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+        @components.Pagination(components.PaginationProps{
+          Page: p.Page, PerPage: p.PerPage, Total: p.Total, TotalPages: p.TotalPages,
+          BaseURL: "/retur-penjualan", QueryStr: "",
+        })
+      }
+    }
+  }
+}

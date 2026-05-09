@@ -1,0 +1,108 @@
+package retur_penjualan
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/format"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Form(p FormProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Retur Penjualan Baru",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Transaksi" },
+      { Label: "Retur Penjualan", Href: "/retur-penjualan" },
+      { Label: "Baru" },
+    },
+  }) {
+    @components.PageHeader("Retur Penjualan Baru", "Pilih item yang dikembalikan dari invoice " + p.Penjualan.NomorKwitansi) {}
+
+    if p.General != "" {
+      <div class="rounded-lg border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800 mb-3">
+        { p.General }
+      </div>
+    }
+
+    <form method="post" action="/retur-penjualan" class="space-y-4">
+      <input type="hidden" name="_csrf" value={ p.CSRFToken }/>
+      <input type="hidden" name="penjualan_id" value={ strconv.FormatInt(p.Penjualan.ID, 10) }/>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-2 space-y-4">
+          @components.Card(components.CardProps{ Title: "Item Invoice" }) {
+            <table class="min-w-full divide-y divide-slate-200 text-sm">
+              <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th class="px-3 py-2 text-left">Produk</th>
+                  <th class="px-3 py-2 text-right">Qty Invoice</th>
+                  <th class="px-3 py-2 text-left">Sat</th>
+                  <th class="px-3 py-2 text-right">Harga</th>
+                  <th class="px-3 py-2 text-right w-32">Qty Retur</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                for i, it := range p.Penjualan.Items {
+                  {{ idx := strconv.Itoa(i) }}
+                  <tr>
+                    <td class="px-3 py-2">{ it.ProdukNama }</td>
+                    <td class="px-3 py-2 text-right num">{ fmt.Sprintf("%g", it.Qty) }</td>
+                    <td class="px-3 py-2">{ it.SatuanKode }</td>
+                    <td class="px-3 py-2 text-right num">{ format.Rupiah(it.HargaSatuan) }</td>
+                    <td class="px-3 py-2">
+                      <input type="hidden" name={ "items[" + idx + "][penjualan_item_id]" } value={ strconv.FormatInt(it.ID, 10) }/>
+                      <input type="hidden" name={ "items[" + idx + "][satuan_id]" } value={ strconv.FormatInt(it.SatuanID, 10) }/>
+                      <input type="number" step="0.0001" min="0" max={ fmt.Sprintf("%g", it.Qty) }
+                             name={ "items[" + idx + "][qty]" } value="0"
+                             class="input text-right w-28"/>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+            <p class="text-xs text-slate-500 mt-2 px-3">Isi qty retur per item; isi 0 untuk skip.</p>
+          }
+        </div>
+
+        <div class="space-y-4">
+          @components.Card(components.CardProps{ Title: "Informasi Retur" }) {
+            <div class="space-y-3">
+              <label class="block text-sm">
+                <span class="text-slate-700">Tanggal</span>
+                <input type="date" name="tanggal" required value={ p.Tanggal } class="input mt-1"/>
+              </label>
+              <label class="block text-sm">
+                <span class="text-slate-700">Alasan</span>
+                <select name="alasan" class="input mt-1" required>
+                  <option value="">— Pilih —</option>
+                  <option value="rusak">Barang rusak</option>
+                  <option value="salah_kirim">Salah kirim</option>
+                  <option value="tidak_sesuai">Tidak sesuai pesanan</option>
+                  <option value="kelebihan">Kelebihan kirim</option>
+                  <option value="lainnya">Lainnya</option>
+                </select>
+              </label>
+              <label class="block text-sm">
+                <span class="text-slate-700">Catatan</span>
+                <textarea name="catatan" rows="3" class="input mt-1" placeholder="Detail tambahan (opsional)"></textarea>
+              </label>
+              <div class="text-xs text-slate-500 border-t pt-2 space-y-1">
+                <div>Invoice: <span class="font-mono">{ p.Penjualan.NomorKwitansi }</span></div>
+                <div>Mitra: { p.MitraNama }</div>
+                <div>Total Invoice: { format.Rupiah(p.Penjualan.Total) }</div>
+              </div>
+            </div>
+          }
+          <div class="flex justify-end gap-2">
+            <a href={ templ.SafeURL("/penjualan/" + strconv.FormatInt(p.Penjualan.ID, 10)) } class="btn-ghost btn-md">Batal</a>
+            <button type="submit" class="btn-primary btn-md">Simpan Retur</button>
+          </div>
+        </div>
+      </div>
+    </form>
+  }
+}

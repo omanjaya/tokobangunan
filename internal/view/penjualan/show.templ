@@ -192,6 +192,15 @@ templ Show(p ShowProps) {
         <span>Buat Serupa</span>
       }
       if p.Penjualan.StatusBayar != domain.StatusBayarDibatalkan {
+        @components.Button(components.ButtonProps{
+          Variant: "secondary",
+          Href:    fmt.Sprintf("/retur-penjualan/baru?from=%d", p.Penjualan.ID),
+        }) {
+          @icon.Render("rotate-ccw", 14, "")
+          <span>Buat Retur</span>
+        }
+      }
+      if p.Penjualan.StatusBayar != domain.StatusBayarDibatalkan {
         <div class="relative" x-data="{ open: false }">
           <button @click="open = !open" type="button" class="btn-primary btn-md">
             @icon.Printer(16, "")

@@ -507,6 +507,13 @@ func registerTransactionRoutes(g *echo.Group, pool *pgxpool.Pool, appSettingSvc 
 	penjualanHandler := handler.NewPenjualanHandler(penjualanSvc, produkSvc, mitraSvc, gudangSvc, satuanSvc, hargaSvc, appSettingSvc)
 	handler.RegisterPenjualanRoutes(g, penjualanHandler)
 
+	// Retur Penjualan
+	returRepo := repo.NewReturPenjualanRepo(pool)
+	returSvc := service.NewReturPenjualanService(returRepo, penjualanRepo, produkRepo, satuanRepo, gudangRepo)
+	returSvc.SetAudit(sd.auditSvc)
+	returHandler := handler.NewReturPenjualanHandler(returSvc, penjualanSvc, mitraSvc)
+	handler.RegisterReturRoutes(g, returHandler)
+
 	// Mutasi + Stok
 	mutasiRepo := repo.NewMutasiRepo(pool)
 	stokRepo := repo.NewStokRepo(pool)
