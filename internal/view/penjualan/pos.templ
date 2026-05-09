@@ -20,7 +20,12 @@ templ POS(p POSProps) {
       { Label: "POS" },
     },
   }) {
-    @components.PageHeader("Penjualan POS", "Mode kasir cepat. Tap produk untuk masuk ke keranjang.")
+    @components.PageHeader("Penjualan POS", "Mode kasir cepat. Tap produk untuk masuk ke keranjang.") {
+      <a href="/penjualan/list" class="btn-secondary btn-md">
+        @icon.Render("receipt", 16, "")
+        <span>Riwayat</span>
+      </a>
+    }
     @POSCard(p)
   }
 }
@@ -229,15 +234,24 @@ templ posCartPanel(p POSProps) {
 
     <div x-show="items.length > 0" x-cloak class="space-y-2 max-h-[40vh] overflow-y-auto -mx-1 px-1">
       <template x-for="(item, idx) in items" :key="item.uid">
-        <div class="rounded-lg border border-slate-200 p-2.5 bg-white">
+        <div class="rounded-lg border p-2.5 bg-white transition"
+             :class="isPecah(item.qty) ? 'border-amber-300 bg-amber-50/30' : 'border-slate-200'">
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0 flex-1">
-              <div class="text-sm font-medium truncate" x-text="item.produk_label"></div>
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <div class="text-sm font-medium truncate" x-text="item.produk_label"></div>
+                <span x-show="isPecah(item.qty)" x-cloak
+                      class="inline-flex items-center gap-0.5 text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                  Pecah
+                </span>
+              </div>
               <div class="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
                 <span>Rp</span>
                 <input type="number" min="0" step="100" x-model.number="item.harga"
                        aria-label="Harga satuan"
                        class="w-24 h-7 px-1 text-right border-0 border-b border-slate-200 focus:border-brand-500 focus:outline-none bg-transparent"/>
+                <span class="text-slate-400">/</span>
+                <span x-text="currentSatuanKode(item) || '-'"></span>
               </div>
               <div class="mt-1 flex items-center justify-between text-[11px] text-slate-500">
                 <span>Diskon item</span>
@@ -253,16 +267,55 @@ templ posCartPanel(p POSProps) {
               @icon.Trash(14, "")
             </button>
           </div>
-          <div class="mt-2 flex items-center justify-between gap-2">
+
+          <!-- Stepper + chips row -->
+          <div class="mt-2 flex items-center gap-2 flex-wrap">
             <div class="inline-flex items-center rounded-md border border-slate-200">
               <button type="button" @click="decQty(idx)" aria-label="Kurangi"
-                      class="w-11 h-11 flex items-center justify-center text-slate-600 hover:bg-slate-50">−</button>
+                      class="w-10 h-10 flex items-center justify-center text-slate-600 hover:bg-slate-50">−</button>
               <input type="number" min="0.0001" step="0.0001"
                      x-model.number="item.qty"
-                     class="w-14 h-11 text-center border-x border-slate-200 focus:outline-none"/>
+                     class="w-16 h-10 text-center border-x border-slate-200 focus:outline-none"/>
               <button type="button" @click="incQty(idx)" aria-label="Tambah"
-                      class="w-11 h-11 flex items-center justify-center text-slate-600 hover:bg-slate-50">+</button>
+                      class="w-10 h-10 flex items-center justify-center text-slate-600 hover:bg-slate-50">+</button>
             </div>
+            <div class="flex flex-wrap gap-1">
+              <template x-for="v in quickChips(currentSatuanKode(item))" :key="v">
+                <button type="button" @click="setQty(idx, v)"
+                        :class="Math.abs((item.qty || 0) - v) < 0.0001 ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'"
+                        class="min-w-9 h-9 px-2 rounded-md text-xs font-medium">
+                  <span x-text="formatChip(v)"></span>
+                </button>
+              </template>
+            </div>
+          </div>
+
+          <!-- Satuan toggle + konversi preview -->
+          <div class="mt-2 flex items-center justify-between gap-2 text-[11px]" x-show="(item.satuans || []).length > 1" x-cloak>
+            <div class="flex items-center gap-1.5">
+              <span class="text-slate-500">Satuan:</span>
+              <select x-model.number="item.satuan_id"
+                      class="text-xs border border-slate-300 rounded px-1.5 py-1 bg-white">
+                <template x-for="s in (item.satuans || [])" :key="s.id">
+                  <option :value="s.id" x-text="s.nama"></option>
+                </template>
+              </select>
+            </div>
+            <div class="text-slate-500" x-show="hasBesar(item)">
+              ≈ <span class="font-medium text-slate-700" x-text="konversiText(item)"></span>
+            </div>
+          </div>
+
+          <!-- Stok validation cue -->
+          <div x-show="qtyOverStok(item)" x-cloak
+               class="text-xs text-rose-700 bg-rose-50 px-2 py-1 rounded mt-2 flex items-center justify-between gap-2">
+            <span>Stok cuma <span x-text="formatNum(stokAvailable(item))"></span> <span x-text="currentSatuanKode(item)"></span></span>
+            <button type="button" @click="item.qty = stokAvailable(item)"
+                    class="underline font-medium hover:text-rose-900">Set max</button>
+          </div>
+
+          <div class="mt-2 flex items-center justify-between border-t pt-2">
+            <span class="text-[11px] text-slate-500">Subtotal</span>
             <div class="text-sm font-semibold">Rp <span x-text="formatRp(Math.max(0, item.qty * item.harga - (item.diskon_item || 0)))"></span></div>
           </div>
         </div>
@@ -388,30 +441,102 @@ templ posScripts() {
             existing.qty = Number((Number(existing.qty || 0) + 1).toFixed(4));
             return;
           }
-          const sat = (p.satuans && p.satuans[0]) || { id: 0 };
+          const satuans = p.satuans || [];
+          // Pilih satuan_kecil (faktor === 1) sebagai default; fallback ke index 0.
+          const sKecil = satuans.find(s => Number(s.faktor || 0) === 1) || satuans[0] || { id: 0 };
           this.items.push({
             uid: uid(),
             produk_id: p.id,
             produk_label: p.nama,
             qty: 1,
-            satuan_id: sat.id || 0,
-            satuans: p.satuans || [],
+            satuan_id: sKecil.id || 0,
+            satuans: satuans,
+            stok_basis: Number(p.stok || 0),
             harga: Number(p.harga_default || 0),
             diskon_item: 0,
           });
         },
+        smartStep(qty) {
+          return (Math.abs(qty - Math.round(qty)) > 0.001) ? 0.5 : 1;
+        },
         incQty(i) {
           const it = this.items[i]; if (!it) return;
-          it.qty = Number((Number(it.qty || 0) + 1).toFixed(4));
+          const step = this.smartStep(Number(it.qty || 0));
+          it.qty = Math.round((Number(it.qty || 0) + step) * 10000) / 10000;
         },
         decQty(i) {
           const it = this.items[i]; if (!it) return;
-          const next = Number((Number(it.qty || 0) - 1).toFixed(4));
+          const step = this.smartStep(Number(it.qty || 0));
+          const next = Math.round((Number(it.qty || 0) - step) * 10000) / 10000;
           if (next <= 0) { this.items.splice(i, 1); return; }
           it.qty = next;
         },
+        setQty(i, v) {
+          const it = this.items[i]; if (!it) return;
+          it.qty = Number(v);
+        },
         removeItem(i) { this.items.splice(i, 1); },
         clearCart() { this.items = []; },
+
+        // ---------- Smart qty helpers ----------
+        currentSatuanKode(item) {
+          const s = (item.satuans || []).find(x => x.id === item.satuan_id);
+          return s ? (s.kode || '') : '';
+        },
+        currentSatuanFaktor(item) {
+          const s = (item.satuans || []).find(x => x.id === item.satuan_id);
+          return s ? Number(s.faktor || 1) : 1;
+        },
+        hasBesar(item) {
+          return (item.satuans || []).some(s => Number(s.faktor || 0) > 1);
+        },
+        konversiText(item) {
+          const sActive = (item.satuans || []).find(s => s.id === item.satuan_id);
+          if (!sActive) return '';
+          const sKecil = (item.satuans || []).find(s => Number(s.faktor || 0) === 1);
+          if (!sKecil) return '';
+          if (Number(sActive.faktor || 1) === 1) return '';
+          const totalKecil = Number(item.qty || 0) * Number(sActive.faktor || 1);
+          return totalKecil.toFixed(2).replace(/\.?0+$/, '') + ' ' + sKecil.kode;
+        },
+        quickChips(kode) {
+          const map = {
+            sak: [0.25, 0.5, 1, 2, 5],
+            kg: [1, 5, 10, 25, 50],
+            meter: [1, 5, 10, 25, 50],
+            m: [1, 5, 10, 25, 50],
+            lembar: [1, 2, 5, 10],
+            pcs: [1, 2, 5, 10],
+            dus: [0.25, 0.5, 1, 2],
+            box: [0.25, 0.5, 1, 2],
+            pal: [0.25, 0.5, 1],
+            roll: [0.25, 0.5, 1],
+          };
+          const k = (kode || '').toLowerCase();
+          return map[k] || [1, 2, 5, 10];
+        },
+        formatChip(v) {
+          if (v === 0.25) return '¼';
+          if (v === 0.5) return '½';
+          if (v === 0.75) return '¾';
+          return String(v);
+        },
+        formatNum(n) {
+          const x = Number(n || 0);
+          return x.toFixed(2).replace(/\.?0+$/, '');
+        },
+        isPecah(qty) {
+          const q = Number(qty || 0);
+          return Math.abs(q - Math.round(q)) > 0.001;
+        },
+        stokAvailable(item) {
+          const f = this.currentSatuanFaktor(item);
+          if (!f) return 0;
+          return (Number(item.stok_basis || 0) / f);
+        },
+        qtyOverStok(item) {
+          return Number(item.qty || 0) > this.stokAvailable(item) + 0.001;
+        },
 
         // ---------- Mitra ----------
         async searchMitra() {
@@ -476,7 +601,8 @@ templ posScripts() {
             const harga = p.harga_eceran ? Math.floor(p.harga_eceran / 100) : 0;
             this.addByProduk({
               id: p.id, nama: p.nama, sku: p.sku,
-              satuans: [{ id: p.satuan_kecil_id || 0 }],
+              satuans: [{ id: p.satuan_kecil_id || 0, kode: p.satuan_kecil_kode || '', nama: p.satuan_kecil_nama || '', faktor: 1 }],
+              stok: 0,
               harga_default: harga,
             });
             if (window.app && window.app.toast) {

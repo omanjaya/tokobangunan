@@ -11,8 +11,10 @@ import (
 func RegisterPenjualanRoutes(g *echo.Group, ph *PenjualanHandler) {
 	pj := g.Group("/penjualan")
 
-	pj.GET("", ph.Index)
+	// Default /penjualan render POS (kasir cepat). Riwayat di /penjualan/list.
+	pj.GET("", ph.New)
 	pj.GET("/baru", ph.New)
+	pj.GET("/list", ph.List)
 	pj.POST("", ph.Create)
 
 	// Autocomplete JSON (dipakai form Alpine.js).

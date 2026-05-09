@@ -544,7 +544,7 @@ templ formScripts() {
 
     window.produkPicker = function() {
       return {
-        results: [], open: false, item: null,
+        results: [], open: false, item: {},
         bind(it) { this.item = it; },
         stokBadgeClass(p) { return stokBadgeFromProduk(p); },
         async search(item, root) {

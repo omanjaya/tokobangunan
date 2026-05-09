@@ -19,10 +19,15 @@ import (
 //   - GET  /setting/audit-log/:id     (owner/admin)
 func RegisterAccountRoutes(g *echo.Group, ph *ProfileHandler, ah *AuditLogHandler, hh *HelpHandler) {
 	g.GET("/profil", ph.Show)
+	g.GET("/profile", ph.Show)
 	g.POST("/profil", ph.Update)
+	g.POST("/profile", ph.Update)
 	g.GET("/profil/password", ph.ShowChangePassword)
+	g.GET("/profile/password", ph.ShowChangePassword)
 	g.POST("/profil/password", ph.ChangePassword)
+	g.POST("/profile/password", ph.ChangePassword)
 
+	g.GET("/help", hh.Shortcuts)
 	g.GET("/help/shortcuts", hh.Shortcuts)
 
 	audit := g.Group("/setting/audit-log", auth.RequireRole("owner", "admin"))

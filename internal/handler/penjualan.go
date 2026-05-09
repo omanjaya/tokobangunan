@@ -48,8 +48,9 @@ func NewPenjualanHandler(
 	}
 }
 
-// Index GET /penjualan.
-func (h *PenjualanHandler) Index(c echo.Context) error {
+// List GET /penjualan/list - daftar transaksi (riwayat).
+// Sebelumnya di /penjualan; dipindah supaya /penjualan default render POS.
+func (h *PenjualanHandler) List(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	page, _ := strconv.Atoi(c.QueryParam("page"))
@@ -152,6 +153,10 @@ func (h *PenjualanHandler) New(c echo.Context) error {
 	if u := auth.CurrentUser(c); u != nil && u.GudangID != nil {
 		defaultGudang = *u.GudangID
 	}
+	// Fallback: kalau user tanpa default gudang (mis. owner), pilih gudang pertama.
+	if defaultGudang == 0 && len(gudangs) > 0 {
+		defaultGudang = gudangs[0].ID
+	}
 
 	in := dto.PenjualanCreateInput{
 		Tanggal:     time.Now().Format("2006-01-02"),
@@ -184,17 +189,36 @@ func (h *PenjualanHandler) New(c echo.Context) error {
 	if ppnAvail {
 		in.PPNEnabled = true
 	}
-	props := penjualanview.FormProps{
+
+	// Fallback ke form lama via ?mode=form (untuk debugging/komplek).
+	if c.QueryParam("mode") == "form" {
+		props := penjualanview.FormProps{
+			Nav:          layout.DefaultNav("/penjualan"),
+			User:         penjualanUserData(c),
+			Input:        in,
+			Gudangs:      gudangs,
+			MitraNama:    mitraNama,
+			ClientUUID:   uuid.New().String(),
+			PPNAvailable: ppnAvail,
+			PPNPersen:    ppnPersen,
+		}
+		return RenderHTML(c, http.StatusOK, penjualanview.Form(props))
+	}
+
+	// Default: render POS view (cashier mode).
+	kategoris, _ := h.produk.ListKategori(c.Request().Context())
+	posProps := penjualanview.POSProps{
 		Nav:          layout.DefaultNav("/penjualan"),
 		User:         penjualanUserData(c),
 		Input:        in,
 		Gudangs:      gudangs,
+		Kategoris:    kategoris,
 		MitraNama:    mitraNama,
 		ClientUUID:   uuid.New().String(),
 		PPNAvailable: ppnAvail,
 		PPNPersen:    ppnPersen,
 	}
-	return RenderHTML(c, http.StatusOK, penjualanview.Form(props))
+	return RenderHTML(c, http.StatusOK, penjualanview.POS(posProps))
 }
 
 // pajakUI - resolusi konfigurasi PPN untuk render form.
@@ -473,9 +497,31 @@ func (h *PenjualanHandler) SearchProdukJSON(c echo.Context) error {
 		tipe = domain.TipeHargaEceran
 	}
 
-	items, err := h.produk.Search(ctx, q, 10)
-	if err != nil {
-		return err
+	// Limit override (POS grid initial load = 24, cap 50).
+	limit, _ := strconv.Atoi(c.QueryParam("limit"))
+	if limit <= 0 {
+		limit = 10
+	} else if limit > 50 {
+		limit = 50
+	}
+
+	var items []domain.Produk
+	if q == "" {
+		// Empty query → list active produk (POS grid initial).
+		isActive := true
+		page1, lerr := h.produk.List(ctx, repo.ListProdukFilter{
+			Page: 1, PerPage: limit, IsActive: &isActive,
+		})
+		if lerr != nil {
+			return lerr
+		}
+		items = page1.Items
+	} else {
+		searched, err := h.produk.Search(ctx, q, limit)
+		if err != nil {
+			return err
+		}
+		items = searched
 	}
 	// Attach default satuan + harga sesuai tipe + stok info.
 	out := make([]map[string]any, 0, len(items))
@@ -484,12 +530,14 @@ func (h *PenjualanHandler) SearchProdukJSON(c echo.Context) error {
 		if s, err := h.satuan.Get(ctx, p.SatuanKecilID); err == nil {
 			satuans = append(satuans, map[string]any{
 				"id": s.ID, "kode": s.Kode, "nama": s.Nama,
+				"faktor": 1.0,
 			})
 		}
 		if p.SatuanBesarID != nil {
 			if s, err := h.satuan.Get(ctx, *p.SatuanBesarID); err == nil {
 				satuans = append(satuans, map[string]any{
 					"id": s.ID, "kode": s.Kode, "nama": s.Nama,
+					"faktor": p.FaktorKonversi,
 				})
 			}
 		}

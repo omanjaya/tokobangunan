@@ -65,7 +65,9 @@ func CSP(production bool) echo.MiddlewareFunc {
 			ctx := context.WithValue(req.Context(), cspNonceCtxKey{}, nonce)
 			c.SetRequest(req.WithContext(ctx))
 
-			csp := "default-src 'self'; script-src 'self' 'nonce-" + nonce + "'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
+			// 'unsafe-eval' diperlukan untuk Alpine.js (eval x-data via Function()).
+			// htmx & Alpine tidak punya CSP-friendly build yang full-featured.
+			csp := "default-src 'self'; script-src 'self' 'unsafe-eval' 'nonce-" + nonce + "'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
 			if !production {
 				// Dev: allow eval-less inline only via nonce; identical policy
 				// keeps parity with prod so violations surface during dev.
