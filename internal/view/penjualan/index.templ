@@ -38,7 +38,7 @@ templ Index(p IndexProps) {
           Description: "Klik 'Penjualan Baru' untuk mencatat transaksi.",
         })
       } else {
-        @indexTable(p.Rows)
+        @indexTable(p.Rows, p.CanBulk, p.CSRFToken)
         @components.Pagination(components.PaginationProps{
           Page: p.Page, PerPage: p.PerPage, Total: p.Total, TotalPages: p.TotalPages,
           BaseURL: "/penjualan", QueryStr: penjualanQueryStr(p),
@@ -112,11 +112,18 @@ templ statusOption(value, label, current string) {
   }
 }
 
-templ indexTable(rows []Row) {
-  <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+templ indexTable(rows []Row, canBulk bool, csrfToken string) {
+  <div x-data="bulkSelect()" class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
     <table class="min-w-full divide-y divide-slate-200 text-sm">
       <thead class="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-sm">
         <tr>
+          if canBulk {
+            <th class="px-3 py-3 w-8">
+              <input type="checkbox" :checked="isAll()" @change="toggleAll($event)"
+                     class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                     aria-label="Pilih semua"/>
+            </th>
+          }
           <th class="px-4 py-3 text-left font-medium">Tanggal</th>
           <th class="px-4 py-3 text-left font-medium">Nomor</th>
           <th class="px-4 py-3 text-left font-medium">Mitra</th>
@@ -129,6 +136,15 @@ templ indexTable(rows []Row) {
       <tbody class="divide-y divide-slate-100 bg-white" x-data="tableNav('/penjualan/:id')">
         for _, r := range rows {
           <tr data-id={ strconv.FormatInt(r.Penjualan.ID, 10) }>
+            if canBulk {
+              <td class="px-3 py-3 w-8">
+                if string(r.Penjualan.StatusBayar) != "dibatalkan" {
+                  <input type="checkbox" :value={ strconv.FormatInt(r.Penjualan.ID, 10) } x-model="selected"
+                         @click.stop=""
+                         class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"/>
+                }
+              </td>
+            }
             <td class="px-4 py-3">{ r.Penjualan.Tanggal.Format("02 Jan 2006") }</td>
             <td class="px-4 py-3 font-mono">{ r.Penjualan.NomorKwitansi }</td>
             <td class="px-4 py-3">{ r.MitraNama }</td>
@@ -145,6 +161,79 @@ templ indexTable(rows []Row) {
         }
       </tbody>
     </table>
+    if canBulk {
+      @bulkBar(csrfToken)
+    }
+  </div>
+}
+
+// bulkBar - sticky action bar untuk bulk cancel + export XLSX.
+// Pakai Alpine scope dari bulkSelect() (`selected`).
+templ bulkBar(csrfToken string) {
+  <div
+    x-show="selected.length > 0"
+    x-transition.opacity
+    x-cloak
+    x-data="{ confirmOpen: false, alasan: '' }"
+    class="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 px-4 py-2.5 rounded-full bg-slate-900 text-white shadow-lg"
+  >
+    <span class="text-sm">
+      <span x-text="selected.length" class="font-semibold"></span>
+      <span>invoice terpilih</span>
+    </span>
+    <button
+      type="button"
+      @click="window.location='/penjualan/bulk/export.xlsx?ids=' + selected.join(',')"
+      class="text-xs px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20"
+    >Ekspor XLSX</button>
+    <button
+      type="button"
+      @click="confirmOpen = true"
+      class="text-xs px-3 py-1.5 rounded-full bg-rose-500 hover:bg-rose-600 text-white"
+    >Batalkan Terpilih</button>
+    <button
+      type="button"
+      @click="selected = []"
+      class="text-xs px-2 py-1 rounded-full text-slate-300 hover:text-white"
+      aria-label="Batal pilihan"
+    >Tutup</button>
+
+    <!-- Confirmation modal: bulk cancel -->
+    <div
+      x-show="confirmOpen"
+      x-cloak
+      @keydown.escape.window="confirmOpen = false"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4"
+    >
+      <form
+        method="post" action="/penjualan/bulk-cancel"
+        @submit="confirmOpen = false"
+        class="w-full max-w-md bg-white rounded-lg shadow-xl text-slate-800 p-5 space-y-4"
+      >
+        <input type="hidden" name="csrf_token" value={ csrfToken }/>
+        <template x-for="id in selected" :key="id">
+          <input type="hidden" name="ids[]" :value="id"/>
+        </template>
+        <div>
+          <h3 class="text-base font-semibold">Batalkan invoice?</h3>
+          <p class="text-sm text-slate-600 mt-1">
+            <span x-text="selected.length"></span> invoice akan dibatalkan. Stok akan dikembalikan otomatis.
+            Invoice yang sudah ada pembayaran atau sudah dibatalkan akan dilewati.
+          </p>
+        </div>
+        <div>
+          <label for="bulk_alasan" class="block text-xs font-medium text-slate-700 mb-1">Alasan pembatalan</label>
+          <textarea id="bulk_alasan" name="alasan" x-model="alasan" rows="3"
+                    class="input w-full" placeholder="Mis. salah input mitra, retur penuh, dsb."></textarea>
+        </div>
+        <div class="flex items-center justify-end gap-2">
+          <button type="button" @click="confirmOpen = false"
+                  class="px-3 py-1.5 text-sm rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700">Batal</button>
+          <button type="submit"
+                  class="px-3 py-1.5 text-sm rounded-md bg-rose-600 hover:bg-rose-700 text-white">Ya, Batalkan</button>
+        </div>
+      </form>
+    </div>
   </div>
 }
 

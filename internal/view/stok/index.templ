@@ -4,6 +4,7 @@ import (
   "fmt"
   "strconv"
 
+  "github.com/omanjaya/tokobangunan/internal/format"
   "github.com/omanjaya/tokobangunan/internal/repo"
   "github.com/omanjaya/tokobangunan/internal/view/components"
   "github.com/omanjaya/tokobangunan/internal/view/icon"
@@ -178,8 +179,8 @@ templ stokRow(r repo.StokDetail) {
       }
     </td>
     <td class="px-4 py-3 text-slate-600">{ r.SatuanKode }</td>
-    <td class="px-4 py-3 text-right tabular-nums">{ fmt.Sprintf("%.4f", r.Qty) }</td>
-    <td class="px-4 py-3 text-right tabular-nums text-slate-500">{ fmt.Sprintf("%.4f", r.StokMinimum) }</td>
+    <td class="px-4 py-3 text-right tabular-nums">{ format.Qty(r.Qty) }</td>
+    <td class="px-4 py-3 text-right tabular-nums text-slate-500">{ format.Qty(r.StokMinimum) }</td>
     <td class="px-4 py-3">
       @components.BadgeWithDot(StokStatusLabel(r.Qty, r.StokMinimum), StokStatusVariant(r.Qty, r.StokMinimum))
     </td>

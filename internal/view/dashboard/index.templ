@@ -73,36 +73,18 @@ templ Index(p IndexProps) {
       </div>
     </div>
 
+    <!-- Below-fold: lazy fetch via htmx setelah element revealed. Skeleton
+         dengan min-height match expected supaya zero CLS; initial response
+         payload turun (4 query bawah skip di SSR). -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
       <div>
         @components.Card(components.CardProps{ Title: "Stok kritis", Subtitle: "Item di bawah minimum" }) {
-          if p.Data != nil && len(p.Data.StokKritis) > 0 {
-            @stokKritisList(p.Data.StokKritis)
-          } else {
-            @components.EmptyState(components.EmptyStateProps{
-              IconName: "package",
-              Title: "Stok aman",
-              Description: "Tidak ada produk di bawah stok minimum saat ini.",
-            })
-          }
+          @lazySlot("/dashboard/section/stok-kritis", "180px")
         }
       </div>
       <div>
         @components.Card(components.CardProps{ Title: "Transaksi terakhir", Subtitle: "10 penjualan terbaru" }) {
-          if p.Data != nil && len(p.Data.RecentTrx) > 0 {
-            @recentTrxList(p.Data.RecentTrx)
-          } else {
-            @components.EmptyState(components.EmptyStateProps{
-              IconName: "inbox",
-              Title: "Belum ada transaksi",
-              Description: "Transaksi yang dibuat hari ini akan tampil di sini.",
-            }) {
-              @components.Button(components.ButtonProps{ Variant: "primary", Size: "sm", Href: "/penjualan/baru" }) {
-                @icon.Plus(14, "")
-                <span>Buat penjualan</span>
-              }
-            }
-          }
+          @lazySlot("/dashboard/section/recent-trx", "320px")
         }
       </div>
     </div>
@@ -110,28 +92,12 @@ templ Index(p IndexProps) {
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
       <div>
         @components.Card(components.CardProps{ Title: "Pembayaran terakhir", Subtitle: "5 pembayaran terbaru" }) {
-          if p.Data != nil && len(p.Data.RecentPembayaran) > 0 {
-            @recentPembayaranList(p.Data.RecentPembayaran)
-          } else {
-            @components.EmptyState(components.EmptyStateProps{
-              IconName: "credit-card",
-              Title: "Belum ada pembayaran",
-              Description: "Pembayaran terbaru dari mitra akan tampil di sini.",
-            })
-          }
+          @lazySlot("/dashboard/section/recent-pembayaran", "180px")
         }
       </div>
       <div>
         @components.Card(components.CardProps{ Title: "Mutasi terakhir", Subtitle: "5 mutasi antar gudang" }) {
-          if p.Data != nil && len(p.Data.RecentMutasi) > 0 {
-            @recentMutasiList(p.Data.RecentMutasi)
-          } else {
-            @components.EmptyState(components.EmptyStateProps{
-              IconName: "truck",
-              Title: "Belum ada mutasi",
-              Description: "Mutasi antar gudang yang dibuat akan tampil di sini.",
-            })
-          }
+          @lazySlot("/dashboard/section/recent-mutasi", "180px")
         }
       </div>
     </div>

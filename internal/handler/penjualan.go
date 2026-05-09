@@ -51,6 +51,9 @@ func NewPenjualanHandler(
 // List GET /penjualan/list - daftar transaksi (riwayat).
 // Sebelumnya di /penjualan; dipindah supaya /penjualan default render POS.
 func (h *PenjualanHandler) List(c echo.Context) error {
+	if redir, t := filterPersist(c, "tb_filter_penjualan_list"); redir {
+		return c.Redirect(http.StatusSeeOther, t)
+	}
 	ctx := c.Request().Context()
 
 	page, _ := strconv.Atoi(c.QueryParam("page"))
@@ -123,6 +126,10 @@ func (h *PenjualanHandler) List(c echo.Context) error {
 		status = *filter.Status
 	}
 
+	canBulk := false
+	if u := auth.CurrentUser(c); u != nil && isPrivilegedRole(u.Role) {
+		canBulk = true
+	}
 	props := penjualanview.IndexProps{
 		Nav:        layout.DefaultNav("/penjualan"),
 		User:       penjualanUserData(c),
@@ -138,6 +145,8 @@ func (h *PenjualanHandler) List(c echo.Context) error {
 		Status:     status,
 		Query:      filter.Query,
 		Gudangs:    gudangs,
+		CanBulk:    canBulk,
+		CSRFToken:  csrfFromContext(c),
 	}
 	return RenderHTML(c, http.StatusOK, penjualanview.Index(props))
 }

@@ -22,19 +22,23 @@ func badgeDotColor(variant string) string {
 // dir: "up" | "down" | "" (netral)
 // good: true bila up adalah hal positif (mis. omset). false bila up = bad
 // (mis. piutang overdue).
+//
+// A11y: Pakai shade -700 (bukan -600) supaya kontras text-xs (small text) di
+// atas background putih lulus WCAG AA (>=4.5:1). text-emerald-600 ~3.4:1 fail.
+// font-medium menambah ketebalan stroke supaya keterbacaan optimal.
 func DeltaColor(dir string, good bool) string {
 	switch dir {
 	case "up":
 		if good {
-			return "text-emerald-600"
+			return "text-emerald-700 font-medium"
 		}
-		return "text-rose-600"
+		return "text-rose-700 font-medium"
 	case "down":
 		if good {
-			return "text-rose-600"
+			return "text-rose-700 font-medium"
 		}
-		return "text-emerald-600"
+		return "text-emerald-700 font-medium"
 	default:
-		return "text-slate-500"
+		return "text-slate-600"
 	}
 }

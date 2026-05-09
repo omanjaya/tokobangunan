@@ -1,0 +1,82 @@
+package dashboard
+
+import (
+  "github.com/omanjaya/tokobangunan/internal/repo"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/icon"
+)
+
+// PartialStokKritis - rendered into the lazy slot for "Stok kritis" card.
+templ PartialStokKritis(rows []repo.StokKritisRow) {
+  if len(rows) > 0 {
+    @stokKritisList(rows)
+  } else {
+    @components.EmptyState(components.EmptyStateProps{
+      IconName: "package",
+      Title: "Stok aman",
+      Description: "Tidak ada produk di bawah stok minimum saat ini.",
+    })
+  }
+}
+
+// PartialRecentTrx - rendered into the lazy slot for "Transaksi terakhir" card.
+templ PartialRecentTrx(rows []repo.LaporanPenjualanRow) {
+  if len(rows) > 0 {
+    @recentTrxList(rows)
+  } else {
+    @components.EmptyState(components.EmptyStateProps{
+      IconName: "inbox",
+      Title: "Belum ada transaksi",
+      Description: "Transaksi yang dibuat hari ini akan tampil di sini.",
+    }) {
+      @components.Button(components.ButtonProps{ Variant: "primary", Size: "sm", Href: "/penjualan/baru" }) {
+        @icon.Plus(14, "")
+        <span>Buat penjualan</span>
+      }
+    }
+  }
+}
+
+// PartialRecentPembayaran - rendered into the lazy slot for "Pembayaran terakhir".
+templ PartialRecentPembayaran(rows []repo.RecentPembayaranRow) {
+  if len(rows) > 0 {
+    @recentPembayaranList(rows)
+  } else {
+    @components.EmptyState(components.EmptyStateProps{
+      IconName: "credit-card",
+      Title: "Belum ada pembayaran",
+      Description: "Pembayaran terbaru dari mitra akan tampil di sini.",
+    })
+  }
+}
+
+// PartialRecentMutasi - rendered into the lazy slot for "Mutasi terakhir".
+templ PartialRecentMutasi(rows []repo.RecentMutasiRow) {
+  if len(rows) > 0 {
+    @recentMutasiList(rows)
+  } else {
+    @components.EmptyState(components.EmptyStateProps{
+      IconName: "truck",
+      Title: "Belum ada mutasi",
+      Description: "Mutasi antar gudang yang dibuat akan tampil di sini.",
+    })
+  }
+}
+
+// lazySlot - skeleton placeholder yang fetch htmx pas revealed.
+// hMin: minimum height supaya tidak CLS saat content masuk.
+templ lazySlot(url, hMin string) {
+  <div hx-get={ url }
+       hx-trigger="revealed once delay:100ms"
+       hx-swap="innerHTML"
+       class="relative"
+       style={ "min-height:" + hMin }>
+    <div class="animate-pulse space-y-2.5" aria-hidden="true">
+      <div class="h-4 bg-slate-100 rounded w-3/4"></div>
+      <div class="h-4 bg-slate-100 rounded w-2/3"></div>
+      <div class="h-4 bg-slate-100 rounded w-1/2"></div>
+      <div class="h-4 bg-slate-100 rounded w-3/5"></div>
+    </div>
+    <span class="sr-only">Memuat data…</span>
+  </div>
+}

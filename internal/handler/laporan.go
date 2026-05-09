@@ -69,6 +69,9 @@ func (h *LaporanHandler) LR(c echo.Context) error {
 
 // Penjualan GET /laporan/penjualan.
 func (h *LaporanHandler) Penjualan(c echo.Context) error {
+	if redir, t := filterPersist(c, "tb_filter_laporan_penjualan"); redir {
+		return c.Redirect(http.StatusSeeOther, t)
+	}
 	from, to := parseRange(c)
 
 	var gudangID, mitraID *int64
@@ -856,9 +859,9 @@ func (h *LaporanHandler) ExportStokKritisPDF(c echo.Context) error {
 	for _, r := range rows {
 		pdf.CellFormat(widths[0], 6, truncatePDF(r.ProdukNama, 70), "1", 0, "L", false, 0, "")
 		pdf.CellFormat(widths[1], 6, truncatePDF(r.GudangNama, 36), "1", 0, "L", false, 0, "")
-		pdf.CellFormat(widths[2], 6, fmt.Sprintf("%.2f %s", r.Qty, r.SatuanKode), "1", 0, "R", false, 0, "")
-		pdf.CellFormat(widths[3], 6, fmt.Sprintf("%.2f", r.StokMinimum), "1", 0, "R", false, 0, "")
-		pdf.CellFormat(widths[4], 6, fmt.Sprintf("%.2f", r.Qty-r.StokMinimum), "1", 0, "R", false, 0, "")
+		pdf.CellFormat(widths[2], 6, format.Qty(r.Qty)+" "+r.SatuanKode, "1", 0, "R", false, 0, "")
+		pdf.CellFormat(widths[3], 6, format.Qty(r.StokMinimum), "1", 0, "R", false, 0, "")
+		pdf.CellFormat(widths[4], 6, format.Qty(r.Qty-r.StokMinimum), "1", 0, "R", false, 0, "")
 		pdf.Ln(-1)
 	}
 	return sendPDFNoPeriod(c, pdf, "laporan-stok-kritis")
@@ -907,7 +910,7 @@ func (h *LaporanHandler) ExportTopProdukPDF(c echo.Context) error {
 	for i, r := range rows {
 		pdf.CellFormat(widths[0], 6, strconv.Itoa(i+1), "1", 0, "C", false, 0, "")
 		pdf.CellFormat(widths[1], 6, truncatePDF(r.ProdukNama, 90), "1", 0, "L", false, 0, "")
-		pdf.CellFormat(widths[2], 6, fmt.Sprintf("%.2f", r.QtyTotal), "1", 0, "R", false, 0, "")
+		pdf.CellFormat(widths[2], 6, format.Qty(r.QtyTotal), "1", 0, "R", false, 0, "")
 		pdf.CellFormat(widths[3], 6, format.Rupiah(r.Total), "1", 0, "R", false, 0, "")
 		pdf.Ln(-1)
 		grand += r.Total
@@ -1067,4 +1070,3 @@ func (h *LaporanHandler) gudangLiteCtx(ctx context.Context) ([]laporan.GudangLit
 	}
 	return out, nil
 }
-

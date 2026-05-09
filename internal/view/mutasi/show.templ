@@ -5,6 +5,7 @@ import (
   "time"
 
   "github.com/omanjaya/tokobangunan/internal/domain"
+  "github.com/omanjaya/tokobangunan/internal/format"
   "github.com/omanjaya/tokobangunan/internal/view/components"
   "github.com/omanjaya/tokobangunan/internal/view/icon"
   "github.com/omanjaya/tokobangunan/internal/view/layout"
@@ -81,7 +82,7 @@ templ Show(p ShowProps) {
       @components.Card(components.CardProps{ Title: "Ringkasan" }) {
         <dl class="text-sm space-y-2">
           <div class="flex justify-between"><dt class="text-slate-500">Jumlah Item</dt><dd class="font-medium">{ fmt.Sprintf("%d baris", len(p.Items)) }</dd></div>
-          <div class="flex justify-between"><dt class="text-slate-500">Total Qty (Konversi)</dt><dd class="font-medium">{ fmt.Sprintf("%.2f", totalQtyKonversi(p.Items)) }</dd></div>
+          <div class="flex justify-between"><dt class="text-slate-500">Total Qty (Konversi)</dt><dd class="font-medium">{ format.Qty(totalQtyKonversi(p.Items)) }</dd></div>
         </dl>
       }
     </div>
@@ -103,9 +104,9 @@ templ Show(p ShowProps) {
               for _, it := range p.Items {
                 <tr>
                   <td class="px-4 py-3 font-medium text-slate-900">{ it.Item.ProdukNama }</td>
-                  <td class="px-4 py-3 text-right">{ fmt.Sprintf("%.4f", it.Item.Qty) }</td>
+                  <td class="px-4 py-3 text-right">{ format.Qty(it.Item.Qty) }</td>
                   <td class="px-4 py-3 text-slate-600">{ it.Item.SatuanKode }</td>
-                  <td class="px-4 py-3 text-right">{ fmt.Sprintf("%.4f", it.Item.QtyKonversi) }</td>
+                  <td class="px-4 py-3 text-right">{ format.Qty(it.Item.QtyKonversi) }</td>
                   <td class="px-4 py-3 text-right text-slate-700">{ it.HargaInternalText }</td>
                 </tr>
               }

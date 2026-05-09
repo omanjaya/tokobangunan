@@ -49,6 +49,10 @@ type IndexProps struct {
 	Query      string
 
 	Gudangs []GudangLite
+
+	// CanBulk = true → tampilkan checkbox + bulk action bar (owner/admin).
+	CanBulk   bool
+	CSRFToken string
 }
 
 // FormProps - props halaman form penjualan baru.

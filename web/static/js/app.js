@@ -158,6 +158,14 @@
     }
   });
 
+  // Qty formatter: trim trailing zero supaya 1.0000 -> "1", 0.5000 -> "0.5".
+  app.formatQty = function (v) {
+    if (v == null) return "0";
+    let s = Number(v).toFixed(4);
+    if (s.indexOf(".") !== -1) s = s.replace(/0+$/, "").replace(/\.$/, "");
+    return s || "0";
+  };
+
   window.app = app;
 
   // ---------- Global Search (Alpine component) -----------------------------

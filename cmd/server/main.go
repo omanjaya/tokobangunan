@@ -346,6 +346,10 @@ func newEcho(cfg *config.Config, logger *slog.Logger, pool *pgxpool.Pool) *echo.
 	app.Use(appmw.AuditLog(auditSvcMw, pool))
 	app.Use(appmw.RequireOnboarding(appSettingSvc))
 	app.GET("/dashboard", dashboardHandler.Index)
+	app.GET("/dashboard/section/stok-kritis", dashboardHandler.SectionStokKritis)
+	app.GET("/dashboard/section/recent-trx", dashboardHandler.SectionRecentTrx)
+	app.GET("/dashboard/section/recent-pembayaran", dashboardHandler.SectionRecentPembayaran)
+	app.GET("/dashboard/section/recent-mutasi", dashboardHandler.SectionRecentMutasi)
 	app.GET("/notifications", notifHandler.List)
 	app.GET("/notifications/count", notifHandler.Count)
 

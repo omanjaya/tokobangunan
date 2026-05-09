@@ -33,6 +33,9 @@ func (h *PiutangHandler) Index(c echo.Context) error {
 	if user == nil {
 		return c.Redirect(http.StatusSeeOther, "/login")
 	}
+	if redir, t := filterPersist(c, "tb_filter_piutang"); redir {
+		return c.Redirect(http.StatusSeeOther, t)
+	}
 	ctx := c.Request().Context()
 
 	q := strings.TrimSpace(c.QueryParam("q"))

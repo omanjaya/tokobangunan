@@ -35,4 +35,8 @@ func RegisterPenjualanRoutes(g *echo.Group, ph *PenjualanHandler) {
 	admin.GET("/:id/edit", ph.Edit)
 	admin.POST("/:id", ph.Update)
 	admin.POST("/:id/cancel", ph.Cancel)
+
+	// Bulk actions — owner & admin only.
+	admin.POST("/bulk-cancel", ph.BulkCancel)
+	admin.GET("/bulk/export.xlsx", ph.BulkExportXLSX)
 }

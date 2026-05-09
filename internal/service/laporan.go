@@ -130,6 +130,92 @@ func (s *LaporanService) Dashboard(ctx context.Context, user *auth.User) (*Dashb
 	}, nil
 }
 
+// DashboardScope - resolve gudang scope berdasar role user.
+func (s *LaporanService) DashboardScope(ctx context.Context, user *auth.User) *int64 {
+	if user != nil && user.Role != "owner" && user.Role != "admin" && user.GudangID != nil {
+		gid := *user.GudangID
+		return &gid
+	}
+	return nil
+}
+
+// DashboardAboveFold - hanya KPI + sales 30 hari + top mitra (above-fold).
+// Dipakai initial page load supaya FCP/LCP turun (skip 4 query bawah).
+func (s *LaporanService) DashboardAboveFold(ctx context.Context, user *auth.User) (*DashboardData, error) {
+	gudangID := s.DashboardScope(ctx, user)
+	scopeNama := "Semua Cabang"
+	if gudangID != nil {
+		if g, err := s.gudang.GetByID(ctx, *gudangID); err == nil {
+			scopeNama = g.Nama
+		}
+	}
+
+	to := time.Now()
+	from := to.AddDate(0, 0, -29)
+
+	var (
+		kpi      *repo.DashboardKPI
+		sales    []repo.SalesPerDay
+		topMitra []repo.TopMitra
+	)
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		var e error
+		kpi, e = s.laporan.GetDashboardKPI(gctx, gudangID)
+		return e
+	})
+	g.Go(func() error {
+		var e error
+		sales, e = s.laporan.SalesLast30Days(gctx, gudangID)
+		return e
+	})
+	g.Go(func() error {
+		var e error
+		topMitra, e = s.laporan.TopMitraPeriod(gctx, from, to, 5)
+		return e
+	})
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	return &DashboardData{
+		KPI:         kpi,
+		SalesLast30: sales,
+		TopMitra:    topMitra,
+		ScopeNama:   scopeNama,
+	}, nil
+}
+
+// DashboardStokKritis - section bawah, untuk lazy htmx fetch.
+func (s *LaporanService) DashboardStokKritis(ctx context.Context, user *auth.User) ([]repo.StokKritisRow, error) {
+	rows, err := s.laporan.StokKritisAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) > 10 {
+		rows = rows[:10]
+	}
+	return rows, nil
+}
+
+// DashboardRecentTrx - section bawah.
+func (s *LaporanService) DashboardRecentTrx(ctx context.Context, user *auth.User) ([]repo.LaporanPenjualanRow, error) {
+	gudangID := s.DashboardScope(ctx, user)
+	return s.laporan.RecentTransaksi(ctx, gudangID, 10)
+}
+
+// DashboardRecentPembayaran - section bawah.
+func (s *LaporanService) DashboardRecentPembayaran(ctx context.Context) ([]repo.RecentPembayaranRow, error) {
+	rows, _ := s.laporan.RecentPembayaran(ctx, 5)
+	return rows, nil
+}
+
+// DashboardRecentMutasi - section bawah.
+func (s *LaporanService) DashboardRecentMutasi(ctx context.Context) ([]repo.RecentMutasiRow, error) {
+	rows, _ := s.laporan.RecentMutasi(ctx, 5)
+	return rows, nil
+}
+
 // LR - laba rugi per gudang. Default range = 30 hari terakhir kalau zero.
 func (s *LaporanService) LR(ctx context.Context, from, to time.Time) ([]repo.LaporanLR, error) {
 	from, to = normalizeRange(from, to)
