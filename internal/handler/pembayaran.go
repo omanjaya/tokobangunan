@@ -4,6 +4,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -47,9 +49,15 @@ func (h *PembayaranHandler) Record(c echo.Context) error {
 	if err := c.Bind(&in); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "Form tidak valid")
 	}
+	// Echo c.Bind tidak menangani nested form arrays seperti
+	// metode_breakdown[0][metode]; parse manual.
+	in.MetodeBreakdown = parseBreakdownForm(c)
 	if err := dto.Validate(&in); err != nil {
 		_, _ = dto.CollectFieldErrors(err)
 		return echo.NewHTTPError(http.StatusUnprocessableEntity, "Validasi gagal: pastikan field terisi.")
+	}
+	if errs := in.ValidateBreakdown(); len(errs) > 0 {
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, "Validasi breakdown gagal: total breakdown harus sama dengan jumlah dan metode harus valid.")
 	}
 
 	p, err := h.svc.Record(ctx, in, user.ID)
@@ -144,4 +152,50 @@ func (h *PembayaranHandler) MitraHistory(c echo.Context) error {
 		To:         to,
 	}
 	return RenderHTML(c, http.StatusOK, pembayaranview.History(props))
+}
+
+// parseBreakdownForm parse field bernama metode_breakdown[i][metode|jumlah|referensi]
+// dari form-data jadi slice []dto.MetodeBreakdownInput. Indeks akan di-sort
+// numeric agar urutan deterministik.
+var breakdownKeyRE = regexp.MustCompile(`^metode_breakdown\[(\d+)\]\[(\w+)\]$`)
+
+func parseBreakdownForm(c echo.Context) []dto.MetodeBreakdownInput {
+	form, err := c.FormParams()
+	if err != nil || len(form) == 0 {
+		return nil
+	}
+	rows := make(map[int]map[string]string)
+	for k, v := range form {
+		if len(v) == 0 {
+			continue
+		}
+		m := breakdownKeyRE.FindStringSubmatch(k)
+		if m == nil {
+			continue
+		}
+		idx, _ := strconv.Atoi(m[1])
+		if rows[idx] == nil {
+			rows[idx] = map[string]string{}
+		}
+		rows[idx][m[2]] = v[0]
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	keys := make([]int, 0, len(rows))
+	for k := range rows {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	out := make([]dto.MetodeBreakdownInput, 0, len(keys))
+	for _, idx := range keys {
+		row := rows[idx]
+		jumlah, _ := strconv.ParseInt(strings.TrimSpace(row["jumlah"]), 10, 64)
+		out = append(out, dto.MetodeBreakdownInput{
+			Metode:    strings.TrimSpace(row["metode"]),
+			Jumlah:    jumlah,
+			Referensi: strings.TrimSpace(row["referensi"]),
+		})
+	}
+	return out
 }

@@ -81,6 +81,24 @@ func (s *PembayaranService) Record(ctx context.Context, in dto.PembayaranCreateI
 		Catatan:    strings.TrimSpace(in.Catatan),
 		ClientUUID: clientUUID,
 	}
+	// Convert breakdown rupiah → cents kalau ada.
+	if len(in.MetodeBreakdown) > 0 {
+		bd := make([]domain.MetodePembayaranBreakdown, len(in.MetodeBreakdown))
+		var sumCents int64
+		for i, b := range in.MetodeBreakdown {
+			cents := b.Jumlah * 100
+			bd[i] = domain.MetodePembayaranBreakdown{
+				Metode:    strings.ToLower(strings.TrimSpace(b.Metode)),
+				Jumlah:    cents,
+				Referensi: strings.TrimSpace(b.Referensi),
+			}
+			sumCents += cents
+		}
+		if sumCents != jumlahCents {
+			return nil, fmt.Errorf("%w: total breakdown tidak sama dengan jumlah header", domain.ErrPembayaranInvalid)
+		}
+		p.MetodeBreakdown = bd
+	}
 
 	// Tanpa penjualan_id → no-locking path (tabungan/setoran umum).
 	if !(in.PenjualanID != nil && *in.PenjualanID > 0) {

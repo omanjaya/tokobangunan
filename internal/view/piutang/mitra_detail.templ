@@ -179,31 +179,103 @@ templ paymentForm(p MitraDetailProps) {
           }
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          @components.FormField(components.FormFieldProps{ ID: "tanggal", Label: "Tanggal", Required: true }) {
-            @components.Input(components.InputProps{ ID: "tanggal", Name: "tanggal", Type: "date",
-              Value: time.Now().Format("2006-01-02"), Required: true })
-          }
-          @components.FormField(components.FormFieldProps{ ID: "jumlah", Label: "Jumlah (Rp)", Required: true }) {
-            @components.Input(components.InputProps{ ID: "jumlah", Name: "jumlah", Type: "number",
-              Required: true, Placeholder: "Mis. 5000000" })
-          }
-          @components.FormField(components.FormFieldProps{ ID: "metode", Label: "Metode", Required: true }) {
-            <select id="metode" name="metode" class="input" required>
-              <option value="tunai">Tunai</option>
-              <option value="transfer">Transfer</option>
-              <option value="cek">Cek</option>
-              <option value="giro">Giro</option>
-            </select>
-          }
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          @components.FormField(components.FormFieldProps{ ID: "referensi", Label: "Referensi" }) {
-            @components.Input(components.InputProps{ ID: "referensi", Name: "referensi", Type: "text" })
-          }
-          @components.FormField(components.FormFieldProps{ ID: "catatan", Label: "Catatan" }) {
-            <textarea id="catatan" name="catatan" rows="2" class="input"></textarea>
-          }
+        <div x-data="{ multi: false, breakdown: [{metode:'tunai', jumlah:0, referensi:''}, {metode:'transfer', jumlah:0, referensi:''}],
+                       totalBreakdown() { return this.breakdown.reduce((s,r) => s + (Number(r.jumlah)||0), 0); },
+                       fmtRp(n) { return (Number(n)||0).toLocaleString('id-ID'); } }">
+          <div class="mb-3 flex items-center justify-between">
+            <span class="text-xs text-slate-500">Mode pembayaran</span>
+            <button type="button" @click="multi = !multi"
+                    x-text="multi ? '× Hapus multi-metode' : '+ Multi-metode'"
+                    class="text-xs font-medium text-brand-600 hover:underline"></button>
+          </div>
+
+          <template x-if="!multi">
+            <div>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                @components.FormField(components.FormFieldProps{ ID: "tanggal", Label: "Tanggal", Required: true }) {
+                  @components.Input(components.InputProps{ ID: "tanggal", Name: "tanggal", Type: "date",
+                    Value: time.Now().Format("2006-01-02"), Required: true })
+                }
+                @components.FormField(components.FormFieldProps{ ID: "jumlah", Label: "Jumlah (Rp)", Required: true }) {
+                  @components.Input(components.InputProps{ ID: "jumlah", Name: "jumlah", Type: "number",
+                    Required: true, Placeholder: "Mis. 5000000" })
+                }
+                @components.FormField(components.FormFieldProps{ ID: "metode", Label: "Metode", Required: true }) {
+                  <select id="metode" name="metode" class="input" required>
+                    <option value="tunai">Tunai</option>
+                    <option value="transfer">Transfer</option>
+                    <option value="cek">Cek</option>
+                    <option value="giro">Giro</option>
+                  </select>
+                }
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                @components.FormField(components.FormFieldProps{ ID: "referensi", Label: "Referensi" }) {
+                  @components.Input(components.InputProps{ ID: "referensi", Name: "referensi", Type: "text" })
+                }
+                @components.FormField(components.FormFieldProps{ ID: "catatan", Label: "Catatan" }) {
+                  <textarea id="catatan" name="catatan" rows="2" class="input"></textarea>
+                }
+              </div>
+            </div>
+          </template>
+
+          <template x-if="multi">
+            <div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label for="tanggal_m" class="block text-sm font-medium mb-1">Tanggal <span class="text-rose-600">*</span></label>
+                  <input id="tanggal_m" name="tanggal" type="date" class="input" required value={ time.Now().Format("2006-01-02") } />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-1">Total (auto)</label>
+                  <input type="number" class="input bg-slate-50" readonly :value="totalBreakdown()" />
+                  <input type="hidden" name="jumlah" :value="totalBreakdown()" />
+                  <input type="hidden" name="metode" :value="breakdown[0]?.metode || 'tunai'" />
+                </div>
+              </div>
+              <div class="space-y-2 mb-3">
+                <template x-for="(row, idx) in breakdown" :key="idx">
+                  <div class="grid grid-cols-12 gap-2 items-end">
+                    <div class="col-span-3">
+                      <label class="block text-xs text-slate-500 mb-1">Metode</label>
+                      <select :name="'metode_breakdown[' + idx + '][metode]'" x-model="row.metode" class="input">
+                        <option value="tunai">Tunai</option>
+                        <option value="transfer">Transfer</option>
+                        <option value="cek">Cek</option>
+                        <option value="giro">Giro</option>
+                      </select>
+                    </div>
+                    <div class="col-span-4">
+                      <label class="block text-xs text-slate-500 mb-1">Jumlah (Rp)</label>
+                      <input :name="'metode_breakdown[' + idx + '][jumlah]'" type="number" min="0"
+                             x-model.number="row.jumlah" placeholder="0" class="input" />
+                    </div>
+                    <div class="col-span-4">
+                      <label class="block text-xs text-slate-500 mb-1">Referensi</label>
+                      <input :name="'metode_breakdown[' + idx + '][referensi]'" type="text"
+                             x-model="row.referensi" placeholder="No. transfer / dll" class="input" />
+                    </div>
+                    <div class="col-span-1 flex justify-end">
+                      <button type="button" @click="breakdown.splice(idx, 1)" x-show="breakdown.length > 1"
+                              class="text-rose-600 hover:text-rose-700 text-xl leading-none px-2 pb-1">×</button>
+                    </div>
+                  </div>
+                </template>
+              </div>
+              <div class="flex items-center justify-between">
+                <button type="button" @click="breakdown.push({metode:'tunai', jumlah:0, referensi:''})"
+                        class="btn-secondary btn-sm">+ Tambah baris</button>
+                <div class="text-sm">
+                  Total breakdown: <span class="font-semibold num">Rp <span x-text="fmtRp(totalBreakdown())"></span></span>
+                </div>
+              </div>
+              <div class="mt-3">
+                <label for="catatan_m" class="block text-sm font-medium mb-1">Catatan</label>
+                <textarea id="catatan_m" name="catatan" rows="2" class="input"></textarea>
+              </div>
+            </div>
+          </template>
         </div>
         <div class="flex justify-end">
           @components.Button(components.ButtonProps{ Variant: "primary", Size: "md", Type: "submit" }) {

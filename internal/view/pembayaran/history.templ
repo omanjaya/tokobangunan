@@ -76,17 +76,44 @@ templ historyTable(rows []domain.Pembayaran) {
       <tbody class="divide-y divide-slate-100 bg-white">
         for _, r := range rows {
           <tr>
-            <td class="px-4 py-3">{ r.Tanggal.Format("02 Jan 2006") }</td>
-            <td class="px-4 py-3 font-mono text-xs">
+            <td class="px-4 py-3 align-top">{ r.Tanggal.Format("02 Jan 2006") }</td>
+            <td class="px-4 py-3 font-mono text-xs align-top">
               if r.PenjualanID != nil {
                 { fmt.Sprintf("#%d", *r.PenjualanID) }
               } else {
                 <span class="text-slate-500">— umum —</span>
               }
             </td>
-            <td class="px-4 py-3 capitalize">{ string(r.Metode) }</td>
-            <td class="px-4 py-3 text-slate-600">{ r.Referensi }</td>
-            <td class="px-4 py-3 text-right font-medium num">{ format.Rupiah(r.Jumlah) }</td>
+            <td class="px-4 py-3 align-top">
+              if len(r.MetodeBreakdown) > 0 {
+                <div class="flex flex-col gap-0.5">
+                  for _, b := range r.MetodeBreakdown {
+                    <span class="text-xs">
+                      <span class="capitalize font-medium">{ b.Metode }</span>
+                      <span class="text-slate-500"> · { format.Rupiah(b.Jumlah) }</span>
+                    </span>
+                  }
+                </div>
+              } else {
+                <span class="capitalize">{ string(r.Metode) }</span>
+              }
+            </td>
+            <td class="px-4 py-3 text-slate-600 align-top">
+              if len(r.MetodeBreakdown) > 0 {
+                <div class="flex flex-col gap-0.5">
+                  for _, b := range r.MetodeBreakdown {
+                    if b.Referensi != "" {
+                      <span class="text-xs">{ b.Referensi }</span>
+                    } else {
+                      <span class="text-xs text-slate-400">—</span>
+                    }
+                  }
+                </div>
+              } else {
+                { r.Referensi }
+              }
+            </td>
+            <td class="px-4 py-3 text-right font-medium num align-top">{ format.Rupiah(r.Jumlah) }</td>
           </tr>
         }
       </tbody>

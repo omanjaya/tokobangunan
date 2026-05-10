@@ -35,6 +35,14 @@ func IsValidMetodeBayar(s string) bool {
 	return false
 }
 
+// MetodePembayaranBreakdown - satu komponen breakdown multi-metode pada
+// pembayaran. Jumlah dalam cents (sama dengan kolom Pembayaran.Jumlah).
+type MetodePembayaranBreakdown struct {
+	Metode    string `json:"metode"`
+	Jumlah    int64  `json:"jumlah"` // cents
+	Referensi string `json:"referensi,omitempty"`
+}
+
 // Pembayaran - pembayaran customer (mitra) ke penjualan.
 // Bila PenjualanID nil → pembayaran umum (belum dialokasikan).
 type Pembayaran struct {
@@ -50,6 +58,9 @@ type Pembayaran struct {
 	Catatan          string
 	ClientUUID       uuid.UUID
 	CreatedAt        time.Time
+	// MetodeBreakdown - opsional. Kalau non-nil, sum(jumlah) komponen harus
+	// sama dengan Jumlah header (DB trigger enforce). NULL/empty = single metode.
+	MetodeBreakdown []MetodePembayaranBreakdown
 }
 
 // Validate cek invariant.

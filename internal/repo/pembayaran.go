@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -48,16 +49,24 @@ func NewPembayaranRepo(pool *pgxpool.Pool) *PembayaranRepo {
 
 const pembayaranColumns = `id, penjualan_id, penjualan_tanggal, mitra_id, tanggal,
 	jumlah, metode, COALESCE(referensi, ''), user_id, COALESCE(catatan, ''),
-	client_uuid, created_at`
+	client_uuid, created_at, metode_breakdown`
 
 func scanPembayaran(row pgx.Row, p *domain.Pembayaran) error {
 	var metode string
+	var breakdown []byte
 	if err := row.Scan(&p.ID, &p.PenjualanID, &p.PenjualanTanggal, &p.MitraID,
 		&p.Tanggal, &p.Jumlah, &metode, &p.Referensi, &p.UserID, &p.Catatan,
-		&p.ClientUUID, &p.CreatedAt); err != nil {
+		&p.ClientUUID, &p.CreatedAt, &breakdown); err != nil {
 		return err
 	}
 	p.Metode = domain.MetodeBayar(metode)
+	if len(breakdown) > 0 {
+		if err := json.Unmarshal(breakdown, &p.MetodeBreakdown); err != nil {
+			return fmt.Errorf("unmarshal metode_breakdown: %w", err)
+		}
+	} else {
+		p.MetodeBreakdown = nil
+	}
 	return nil
 }
 
@@ -81,8 +90,8 @@ func (r *PembayaranRepo) CreateInTx(ctx context.Context, tx pgx.Tx, p *domain.Pe
 func (r *PembayaranRepo) createOn(ctx context.Context, q pembayaranQuerier, p *domain.Pembayaran) error {
 	const sql = `INSERT INTO pembayaran
 		(penjualan_id, penjualan_tanggal, mitra_id, tanggal, jumlah, metode,
-		 referensi, user_id, catatan, client_uuid)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		 referensi, user_id, catatan, client_uuid, metode_breakdown)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 		RETURNING id, created_at`
 	var ref *string
 	if v := strings.TrimSpace(p.Referensi); v != "" {
@@ -92,9 +101,17 @@ func (r *PembayaranRepo) createOn(ctx context.Context, q pembayaranQuerier, p *d
 	if v := strings.TrimSpace(p.Catatan); v != "" {
 		catatan = &v
 	}
+	var breakdownJSON []byte
+	if len(p.MetodeBreakdown) > 0 {
+		b, err := json.Marshal(p.MetodeBreakdown)
+		if err != nil {
+			return fmt.Errorf("marshal metode_breakdown: %w", err)
+		}
+		breakdownJSON = b
+	}
 	err := q.QueryRow(ctx, sql,
 		p.PenjualanID, p.PenjualanTanggal, p.MitraID, p.Tanggal, p.Jumlah,
-		string(p.Metode), ref, p.UserID, catatan, p.ClientUUID,
+		string(p.Metode), ref, p.UserID, catatan, p.ClientUUID, breakdownJSON,
 	).Scan(&p.ID, &p.CreatedAt)
 	if err != nil {
 		var pgErr *pgconn.PgError
