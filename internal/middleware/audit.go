@@ -61,19 +61,19 @@ func isServiceCovered(path string) bool {
 
 // specialActions - last-segment path yang di-treat sebagai aksi khusus.
 var specialActions = map[string]string{
-	"submit":          "SUBMIT",
-	"receive":         "RECEIVE",
-	"cancel":          "CANCEL",
-	"approve":         "APPROVE",
-	"toggle-active":   "TOGGLE_ACTIVE",
-	"reset-password":  "RESET_PASSWORD",
-	"test":            "TEST",
-	"bayar":           "BAYAR",
-	"setor":           "SETOR",
-	"tarik":           "TARIK",
-	"batch":           "CREATE_BATCH",
-	"password":        "CHANGE_PASSWORD",
-	"delete":          "DELETE",
+	"submit":          "submit",
+	"receive":         "receive",
+	"cancel":          "cancel",
+	"approve":         "approve",
+	"toggle-active":   "toggle_active",
+	"reset-password":  "reset_password",
+	"test":            "test",
+	"bayar":           "bayar",
+	"setor":           "setor",
+	"tarik":           "tarik",
+	"batch":           "create_batch",
+	"password":        "change_password",
+	"delete":          "delete",
 }
 
 const maxBodyBytes = 64 * 1024
@@ -202,7 +202,7 @@ func parsePathToAudit(path, method string, c echo.Context) (string, string, int6
 	}
 
 	// Default aksi.
-	aksi := "CREATE"
+	aksi := "create"
 	hasID := false
 	for _, p := range parts {
 		if p == ":id" {
@@ -211,7 +211,7 @@ func parsePathToAudit(path, method string, c echo.Context) (string, string, int6
 		}
 	}
 	if hasID {
-		aksi = "UPDATE"
+		aksi = "update"
 	}
 
 	// Cek special action di segmen terakhir.
@@ -221,7 +221,7 @@ func parsePathToAudit(path, method string, c echo.Context) (string, string, int6
 	}
 	// DELETE method (REST) — over-ride.
 	if method == http.MethodDelete {
-		aksi = "DELETE"
+		aksi = "delete"
 	}
 
 	var recordID int64

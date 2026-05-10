@@ -11,12 +11,45 @@ import (
 
 // SupplierService orchestrasi use case supplier (CRUD + list).
 type SupplierService struct {
-	repo *repo.SupplierRepo
+	repo  *repo.SupplierRepo
+	audit *AuditLogService // optional; nil-safe
 }
 
 // NewSupplierService konstruktor.
 func NewSupplierService(r *repo.SupplierRepo) *SupplierService {
 	return &SupplierService{repo: r}
+}
+
+// SetAudit attach AuditLogService (best-effort).
+func (s *SupplierService) SetAudit(a *AuditLogService) { s.audit = a }
+
+func (s *SupplierService) logAudit(ctx context.Context, aksi string, id int64, before, after any) {
+	if s.audit == nil {
+		return
+	}
+	var uid *int64
+	if v := AuditUserFromContext(ctx); v > 0 {
+		v2 := v
+		uid = &v2
+	}
+	_ = s.audit.Record(ctx, RecordEntry{
+		UserID: uid, Aksi: aksi, Tabel: "supplier", RecordID: id,
+		Before: before, After: after,
+	})
+}
+
+func supplierAuditPayload(sp *domain.Supplier) map[string]any {
+	if sp == nil {
+		return nil
+	}
+	return map[string]any{
+		"id":        sp.ID,
+		"kode":      sp.Kode,
+		"nama":      sp.Nama,
+		"alamat":    sp.Alamat,
+		"kontak":    sp.Kontak,
+		"is_active": sp.IsActive,
+	}
 }
 
 // CreateSupplierInput input service-level.
@@ -49,6 +82,7 @@ func (s *SupplierService) Create(ctx context.Context, in CreateSupplierInput) (*
 	if err := s.repo.Create(ctx, sup); err != nil {
 		return nil, fmt.Errorf("create supplier: %w", err)
 	}
+	s.logAudit(ctx, "create", sup.ID, nil, supplierAuditPayload(sup))
 	return sup, nil
 }
 
@@ -59,9 +93,14 @@ func (s *SupplierService) Update(ctx context.Context, in UpdateSupplierInput) (*
 	if err := sup.Validate(); err != nil {
 		return nil, err
 	}
+	var beforeSnap any
+	if old, errOld := s.repo.GetByID(ctx, in.ID); errOld == nil {
+		beforeSnap = supplierAuditPayload(old)
+	}
 	if err := s.repo.Update(ctx, sup); err != nil {
 		return nil, fmt.Errorf("update supplier: %w", err)
 	}
+	s.logAudit(ctx, "update", sup.ID, beforeSnap, supplierAuditPayload(sup))
 	return sup, nil
 }
 
@@ -81,7 +120,15 @@ func (s *SupplierService) Get(ctx context.Context, id int64) (*domain.Supplier, 
 
 // Delete soft delete.
 func (s *SupplierService) Delete(ctx context.Context, id int64) error {
-	return s.repo.SoftDelete(ctx, id)
+	var beforeSnap any
+	if old, errOld := s.repo.GetByID(ctx, id); errOld == nil {
+		beforeSnap = supplierAuditPayload(old)
+	}
+	if err := s.repo.SoftDelete(ctx, id); err != nil {
+		return err
+	}
+	s.logAudit(ctx, "delete", id, beforeSnap, nil)
+	return nil
 }
 
 func buildSupplier(kode, nama, alamat, kontak, catatan string, isActive bool) *domain.Supplier {

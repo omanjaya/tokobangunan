@@ -14,11 +14,48 @@ import (
 
 // DiskonMasterService - business logic master diskon.
 type DiskonMasterService struct {
-	repo *repo.DiskonMasterRepo
+	repo  *repo.DiskonMasterRepo
+	audit *AuditLogService // optional; nil-safe
 }
 
 func NewDiskonMasterService(r *repo.DiskonMasterRepo) *DiskonMasterService {
 	return &DiskonMasterService{repo: r}
+}
+
+// SetAudit attach AuditLogService (best-effort).
+func (s *DiskonMasterService) SetAudit(a *AuditLogService) { s.audit = a }
+
+func (s *DiskonMasterService) logAudit(ctx context.Context, aksi string, id int64, before, after any) {
+	if s.audit == nil {
+		return
+	}
+	var uid *int64
+	if v := AuditUserFromContext(ctx); v > 0 {
+		v2 := v
+		uid = &v2
+	}
+	_ = s.audit.Record(ctx, RecordEntry{
+		UserID: uid, Aksi: aksi, Tabel: "diskon_master", RecordID: id,
+		Before: before, After: after,
+	})
+}
+
+func diskonAuditPayload(d *domain.DiskonMaster) map[string]any {
+	if d == nil {
+		return nil
+	}
+	return map[string]any{
+		"id":             d.ID,
+		"kode":           d.Kode,
+		"nama":           d.Nama,
+		"tipe":           d.Tipe,
+		"nilai":          d.Nilai,
+		"min_subtotal":   d.MinSubtotal,
+		"max_diskon":     d.MaxDiskon,
+		"berlaku_dari":   d.BerlakuDari,
+		"berlaku_sampai": d.BerlakuSampai,
+		"is_active":      d.IsActive,
+	}
 }
 
 func (s *DiskonMasterService) List(ctx context.Context, onlyActive bool) ([]domain.DiskonMaster, error) {
@@ -67,6 +104,7 @@ func (s *DiskonMasterService) Create(ctx context.Context, in dto.DiskonMasterInp
 	if err := s.repo.Create(ctx, d); err != nil {
 		return nil, fmt.Errorf("create diskon: %w", err)
 	}
+	s.logAudit(ctx, "create", d.ID, nil, diskonAuditPayload(d))
 	return d, nil
 }
 
@@ -93,17 +131,37 @@ func (s *DiskonMasterService) Update(ctx context.Context, id int64, in dto.Disko
 	if err := s.repo.Update(ctx, d); err != nil {
 		return nil, err
 	}
+	s.logAudit(ctx, "update", d.ID, diskonAuditPayload(existing), diskonAuditPayload(d))
 	return d, nil
 }
 
 // Toggle aktif/non-aktif.
 func (s *DiskonMasterService) Toggle(ctx context.Context, id int64, active bool) error {
-	return s.repo.SetActive(ctx, id, active)
+	var beforeActive *bool
+	if old, errOld := s.repo.GetByID(ctx, id); errOld == nil {
+		v := old.IsActive
+		beforeActive = &v
+	}
+	if err := s.repo.SetActive(ctx, id, active); err != nil {
+		return err
+	}
+	s.logAudit(ctx, "toggle", id,
+		map[string]any{"is_active": beforeActive},
+		map[string]any{"is_active": active})
+	return nil
 }
 
 // Delete - soft delete via is_active=false.
 func (s *DiskonMasterService) Delete(ctx context.Context, id int64) error {
-	return s.repo.SetActive(ctx, id, false)
+	var beforeSnap any
+	if old, errOld := s.repo.GetByID(ctx, id); errOld == nil {
+		beforeSnap = diskonAuditPayload(old)
+	}
+	if err := s.repo.SetActive(ctx, id, false); err != nil {
+		return err
+	}
+	s.logAudit(ctx, "delete", id, beforeSnap, nil)
+	return nil
 }
 
 func buildDiskonFromInput(in *dto.DiskonMasterInput) (*domain.DiskonMaster, error) {

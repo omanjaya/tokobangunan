@@ -16,11 +16,46 @@ const generatedPasswordLength = 16
 
 // UserAccountService - business logic user management.
 type UserAccountService struct {
-	repo *repo.UserAccountRepo
+	repo  *repo.UserAccountRepo
+	audit *AuditLogService // optional; nil-safe
 }
 
 func NewUserAccountService(r *repo.UserAccountRepo) *UserAccountService {
 	return &UserAccountService{repo: r}
+}
+
+// SetAudit attach AuditLogService (best-effort).
+func (s *UserAccountService) SetAudit(a *AuditLogService) { s.audit = a }
+
+func (s *UserAccountService) logAudit(ctx context.Context, aksi string, id int64, before, after any) {
+	if s.audit == nil {
+		return
+	}
+	var uid *int64
+	if v := AuditUserFromContext(ctx); v > 0 {
+		v2 := v
+		uid = &v2
+	}
+	_ = s.audit.Record(ctx, RecordEntry{
+		UserID: uid, Aksi: aksi, Tabel: "user", RecordID: id,
+		Before: before, After: after,
+	})
+}
+
+// userAuditPayload - sanitize: tidak include password_hash.
+func userAuditPayload(u *domain.UserAccount) map[string]any {
+	if u == nil {
+		return nil
+	}
+	return map[string]any{
+		"id":           u.ID,
+		"username":     u.Username,
+		"nama_lengkap": u.NamaLengkap,
+		"email":        u.Email,
+		"role":         string(u.Role),
+		"gudang_id":    u.GudangID,
+		"is_active":    u.IsActive,
+	}
 }
 
 // CreateResult - hasil Create yang menyertakan plaintext password (sekali pakai).
@@ -78,6 +113,7 @@ func (s *UserAccountService) Create(ctx context.Context, in dto.UserCreateInput)
 	if err := s.repo.Create(ctx, u, hash); err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
+	s.logAudit(ctx, "create", u.ID, nil, userAuditPayload(u))
 	return &CreateResult{User: u, PlaintextPassword: plaintext}, nil
 }
 
@@ -86,6 +122,7 @@ func (s *UserAccountService) Update(ctx context.Context, id int64, in dto.UserUp
 	if err != nil {
 		return nil, err
 	}
+	beforeSnap := userAuditPayload(u)
 
 	newUsername := strings.ToLower(strings.TrimSpace(in.Username))
 	if newUsername != u.Username {
@@ -113,6 +150,7 @@ func (s *UserAccountService) Update(ctx context.Context, id int64, in dto.UserUp
 	if err := s.repo.Update(ctx, u); err != nil {
 		return nil, fmt.Errorf("update user: %w", err)
 	}
+	s.logAudit(ctx, "update", u.ID, beforeSnap, userAuditPayload(u))
 	return u, nil
 }
 
@@ -132,6 +170,7 @@ func (s *UserAccountService) ResetPassword(ctx context.Context, id int64) (strin
 	if err := s.repo.UpdatePassword(ctx, id, hash); err != nil {
 		return "", err
 	}
+	s.logAudit(ctx, "password_reset", id, nil, map[string]any{"reset": true})
 	return plaintext, nil
 }
 
@@ -155,9 +194,24 @@ func (s *UserAccountService) ChangePassword(ctx context.Context, id int64, oldPa
 	if err != nil {
 		return fmt.Errorf("hash new password: %w", err)
 	}
-	return s.repo.UpdatePassword(ctx, id, newHash)
+	if err := s.repo.UpdatePassword(ctx, id, newHash); err != nil {
+		return err
+	}
+	s.logAudit(ctx, "password_change", id, nil, map[string]any{"changed": true})
+	return nil
 }
 
 func (s *UserAccountService) SetActive(ctx context.Context, id int64, active bool) error {
-	return s.repo.SetActive(ctx, id, active)
+	var beforeActive *bool
+	if old, errOld := s.repo.GetByID(ctx, id); errOld == nil {
+		v := old.IsActive
+		beforeActive = &v
+	}
+	if err := s.repo.SetActive(ctx, id, active); err != nil {
+		return err
+	}
+	s.logAudit(ctx, "toggle", id,
+		map[string]any{"is_active": beforeActive},
+		map[string]any{"is_active": active})
+	return nil
 }

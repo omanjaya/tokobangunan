@@ -301,7 +301,9 @@ func newEcho(cfg *config.Config, logger *slog.Logger, pool *pgxpool.Pool) *echo.
 	})
 
 	authStore := auth.NewStore(pool)
-	authHandler := handler.NewAuthHandler(authStore, cfg.IsProduction())
+	authAuditRepo := repo.NewAuditLogRepo(pool)
+	authAuditSvc := service.NewAuditLogService(authAuditRepo)
+	authHandler := handler.NewAuthHandler(authStore, cfg.IsProduction(), authAuditSvc)
 
 	// Shared repos & services hoisted to avoid duplicate construction across register*.
 	gudangRepo := repo.NewGudangRepo(pool)
@@ -571,6 +573,7 @@ func registerPartnerRoutes(g *echo.Group, pool *pgxpool.Pool, sd sharedDeps) {
 	mitraSvc := service.NewMitraService(mitraRepo)
 	mitraSvc.SetAudit(sd.auditSvc)
 	supplierSvc := service.NewSupplierService(supplierRepo)
+	supplierSvc.SetAudit(sd.auditSvc)
 
 	mh := handler.NewMitraHandler(mitraSvc)
 	sh := handler.NewSupplierHandler(supplierSvc)
@@ -583,7 +586,9 @@ func registerSettingRoutes(g *echo.Group, pool *pgxpool.Pool, appSettingSvc *ser
 	userAcctRepo := repo.NewUserAccountRepo(pool)
 
 	gudangSvc := service.NewGudangService(gudangRepo)
+	gudangSvc.SetAudit(sd.auditSvc)
 	userAcctSvc := service.NewUserAccountService(userAcctRepo)
+	userAcctSvc.SetAudit(sd.auditSvc)
 
 	gh := handler.NewGudangHandler(gudangSvc)
 	uh := handler.NewUserAccountHandler(userAcctSvc, gudangRepo)
@@ -614,6 +619,7 @@ func registerSettingRoutes(g *echo.Group, pool *pgxpool.Pool, appSettingSvc *ser
 	// Master Diskon (owner+admin)
 	diskonRepo := repo.NewDiskonMasterRepo(pool)
 	diskonSvc := service.NewDiskonMasterService(diskonRepo)
+	diskonSvc.SetAudit(sd.auditSvc)
 	diskonH := handler.NewDiskonMasterHandler(diskonSvc)
 	dk := g.Group("/setting/diskon", auth.RequireRole("owner", "admin"))
 	dk.GET("", diskonH.Index)

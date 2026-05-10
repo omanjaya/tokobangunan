@@ -12,16 +12,44 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/omanjaya/tokobangunan/internal/auth"
+	"github.com/omanjaya/tokobangunan/internal/service"
 	authview "github.com/omanjaya/tokobangunan/internal/view/auth"
 )
 
 type AuthHandler struct {
 	store  *auth.Store
 	secure bool
+	audit  *service.AuditLogService // optional; nil-safe
 }
 
-func NewAuthHandler(store *auth.Store, secure bool) *AuthHandler {
-	return &AuthHandler{store: store, secure: secure}
+func NewAuthHandler(store *auth.Store, secure bool, audit *service.AuditLogService) *AuthHandler {
+	return &AuthHandler{store: store, secure: secure, audit: audit}
+}
+
+// recordAuditAuth - best-effort audit untuk event auth. userID 0 -> nil (unknown).
+func (h *AuthHandler) recordAuditAuth(c echo.Context, userID int64, aksi string, payload map[string]any) {
+	if h.audit == nil {
+		return
+	}
+	var uid *int64
+	if userID > 0 {
+		id := userID
+		uid = &id
+	}
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	payload["ip"] = c.RealIP()
+	payload["user_agent"] = c.Request().UserAgent()
+	_ = h.audit.Record(c.Request().Context(), service.RecordEntry{
+		UserID:    uid,
+		Aksi:      aksi,
+		Tabel:     "auth",
+		RecordID:  userID,
+		After:     payload,
+		IP:        c.RealIP(),
+		UserAgent: c.Request().UserAgent(),
+	})
 }
 
 // ShowLogin GET /login - render halaman login.
@@ -54,6 +82,7 @@ func (h *AuthHandler) Login(c echo.Context) error {
 		const genericMsg = "Username atau password salah."
 		msg := genericMsg
 		status := http.StatusUnauthorized
+		reason := "invalid_credential"
 		switch {
 		case errors.Is(err, auth.ErrInvalidCredential):
 			slog.WarnContext(ctx, "login failed: invalid credential",
@@ -61,12 +90,18 @@ func (h *AuthHandler) Login(c echo.Context) error {
 		case errors.Is(err, auth.ErrUserLocked):
 			slog.WarnContext(ctx, "login failed: account locked",
 				"username", username, "remote", c.Request().RemoteAddr)
+			reason = "user_locked"
 		default:
 			slog.ErrorContext(ctx, "authenticate failed",
 				"error", err, "username", username)
 			msg = "Terjadi kesalahan, silakan coba lagi."
 			status = http.StatusInternalServerError
+			reason = "error"
 		}
+		h.recordAuditAuth(c, 0, "login_failed", map[string]any{
+			"username": username,
+			"reason":   reason,
+		})
 		return render(c, status, authview.Login(authview.LoginProps{
 			Username:  username,
 			CSRFToken: csrfToken,
@@ -87,6 +122,9 @@ func (h *AuthHandler) Login(c echo.Context) error {
 	}
 
 	auth.SetSessionCookie(c, sess.ID, h.secure)
+	h.recordAuditAuth(c, user.ID, "login", map[string]any{
+		"username": username,
+	})
 
 	if c.Request().Header.Get("HX-Request") == "true" {
 		c.Response().Header().Set("HX-Redirect", "/dashboard")
@@ -97,11 +135,19 @@ func (h *AuthHandler) Login(c echo.Context) error {
 
 // Logout POST /logout - hapus session, clear cookie.
 func (h *AuthHandler) Logout(c echo.Context) error {
+	ctx := c.Request().Context()
+	var auditUserID int64
 	cookie, err := c.Cookie(auth.SessionCookieName)
 	if err == nil && cookie.Value != "" {
 		if id, err := uuid.Parse(cookie.Value); err == nil {
-			_ = h.store.DeleteSession(c.Request().Context(), id)
+			if sess, lookupErr := h.store.GetSession(ctx, id); lookupErr == nil && sess != nil {
+				auditUserID = sess.UserID
+			}
+			_ = h.store.DeleteSession(ctx, id)
 		}
+	}
+	if auditUserID > 0 {
+		h.recordAuditAuth(c, auditUserID, "logout", nil)
 	}
 	auth.ClearSessionCookie(c, h.secure)
 	// Clear-Site-Data: instruksi browser untuk hapus storage (localStorage,
