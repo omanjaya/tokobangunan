@@ -50,6 +50,8 @@ func produkAuditPayload(p *domain.Produk) map[string]any {
 		"faktor_konversi":  p.FaktorKonversi,
 		"stok_minimum":     p.StokMinimum,
 		"is_active":        p.IsActive,
+		"lead_time_days":   p.LeadTimeDays,
+		"safety_stock":     p.SafetyStock,
 	}
 }
 
@@ -79,6 +81,11 @@ func (s *ProdukService) Create(ctx context.Context, in dto.ProdukCreateInput) (*
 	}
 	p := buildProdukFromInput(in.SKU, in.Nama, in.Kategori, in.SatuanKecilID,
 		in.SatuanBesarID, in.FaktorKonversi, in.StokMinimum, in.IsActive)
+	p.LeadTimeDays = in.LeadTimeDays
+	p.SafetyStock = in.SafetyStock
+	if p.LeadTimeDays <= 0 {
+		p.LeadTimeDays = 7
+	}
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
@@ -108,6 +115,11 @@ func (s *ProdukService) Update(ctx context.Context, id int64, in dto.ProdukUpdat
 		in.SatuanBesarID, in.FaktorKonversi, in.StokMinimum, in.IsActive)
 	updated.ID = existing.ID
 	updated.Version = in.Version
+	updated.LeadTimeDays = in.LeadTimeDays
+	updated.SafetyStock = in.SafetyStock
+	if updated.LeadTimeDays <= 0 {
+		updated.LeadTimeDays = 7
+	}
 	if err := updated.Validate(); err != nil {
 		return nil, err
 	}

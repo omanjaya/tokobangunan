@@ -4,8 +4,11 @@ import "github.com/labstack/echo/v4"
 
 // RegisterLaporanRoutes mendaftarkan seluruh route modul laporan.
 // Group g sebaiknya sudah memiliki middleware auth.RequireAuth.
-func RegisterLaporanRoutes(g *echo.Group, lh *LaporanHandler) {
+func RegisterLaporanRoutes(g *echo.Group, lh *LaporanHandler, fh *ForecastHandler) {
 	lap := g.Group("/laporan")
+	if fh != nil {
+		lap.GET("/reorder", fh.Index)
+	}
 
 	lap.GET("", lh.Index)
 	lap.GET("/lr", lh.LR)

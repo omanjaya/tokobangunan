@@ -76,6 +76,7 @@ func DefaultNav(activePath string) NavData {
 		{Label: "Penyesuaian Stok", Href: "/stok/adjust", IconName: "settings"},
 		{Label: "Produk", Href: "/produk", IconName: "boxes"},
 		{Label: "Satuan", Href: "/satuan", IconName: "ruler"},
+		{Label: "Reorder Stok", Href: "/laporan/reorder", IconName: "alert-triangle"},
 
 		{Label: "Mitra & Supplier", IsSection: true},
 		{Label: "Mitra", Href: "/mitra", IconName: "users"},

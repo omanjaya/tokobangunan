@@ -15,6 +15,19 @@ Hostinger, dan restore drill.
 
 ## 1. Konfigurasi env
 
+### Generate secrets (recommended)
+
+Pakai helper script untuk hasilkan passphrase + template:
+
+```bash
+bash scripts/gen-backup-secrets.sh > .env.backup
+chmod 600 .env.backup
+# review & edit kalau perlu (path SSH key absolute, remote dir, retention)
+```
+
+`BACKUP_PASSPHRASE` di-generate via `openssl rand -base64 32` — **simpan di
+password manager segera**. Loss = backup ter-encrypt tidak bisa di-restore.
+
 Lihat `.env.example` blok `# ---------- Backup ----------`. Variabel relevan:
 
 ```
@@ -146,6 +159,18 @@ Belum ada panel admin untuk restore — operasi destructive dilakukan via CLI.
     "find ~/domains/scriptsis.id/public_html/backups/tokobangunan/ \
        -name 'tokobangunan_*' -type f -mtime +60 -delete"
   ```
+
+## 8a. Restore drill (manual, quarterly)
+
+Setiap kuartal (Jan, Apr, Jul, Okt) operator harus jalankan restore drill
+manual ke staging DB untuk verifikasi end-to-end:
+
+1. Download backup terbaru dari Hostinger.
+2. `bash scripts/restore.sh <file>` ke database `tokobangunan_drill`.
+3. Smoke test: login, generate kwitansi, cek count tabel kunci.
+4. Catat hasil di "Live drill log" bawah.
+
+Jadwal recommended: minggu pertama tiap kuartal, sebelum month-end close.
 
 ## 8. Restore drill (CI)
 

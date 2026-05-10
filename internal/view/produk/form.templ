@@ -138,6 +138,30 @@ templ FormCard(p FormProps) {
               Attrs: templ.Attributes{ "step": "0.0001", "min": "0" },
             })
           }
+          @components.FormField(components.FormFieldProps{
+            ID: "lead_time_days", Label: "Lead Time Supplier (hari)",
+            Helper: "Estimasi waktu antara order dan barang sampai. Default 7.",
+            Error: p.Errors["leadtimedays"],
+          }) {
+            @components.Input(components.InputProps{
+              ID: "lead_time_days", Name: "lead_time_days", Type: "number",
+              Value: strconv.Itoa(p.Input.LeadTimeDays),
+              HasError: p.Errors["leadtimedays"] != "",
+              Attrs: templ.Attributes{ "step": "1", "min": "0" },
+            })
+          }
+          @components.FormField(components.FormFieldProps{
+            ID: "safety_stock", Label: "Safety Stock",
+            Helper: "Buffer stok di atas reorder point untuk antisipasi lonjakan.",
+            Error: p.Errors["safetystock"],
+          }) {
+            @components.Input(components.InputProps{
+              ID: "safety_stock", Name: "safety_stock", Type: "number",
+              Value: floatStr(p.Input.SafetyStock),
+              HasError: p.Errors["safetystock"] != "",
+              Attrs: templ.Attributes{ "step": "0.0001", "min": "0" },
+            })
+          }
         </div>
       }
     </div>

@@ -1,0 +1,140 @@
+package laporan
+
+import (
+  "fmt"
+  "strconv"
+
+  "github.com/omanjaya/tokobangunan/internal/repo"
+  "github.com/omanjaya/tokobangunan/internal/view/components"
+  "github.com/omanjaya/tokobangunan/internal/view/layout"
+)
+
+templ Reorder(p ReorderProps) {
+  @layout.AppShell(layout.AppShellProps{
+    Title: "Reorder Stok",
+    Nav: p.Nav,
+    User: p.User,
+    Breadcrumb: []layout.BreadcrumbItem{
+      { Label: "Laporan", Href: "/laporan" },
+      { Label: "Reorder Stok" },
+    },
+  }) {
+    @components.PageHeader("Reorder Stok",
+      "Produk dengan stok di bawah reorder point (perlu segera direstock).") {}
+
+    <form method="get" action="/laporan/reorder"
+          class="card p-4 mb-4 flex flex-wrap gap-3 items-end">
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Gudang</label>
+        <select name="gudang_id" class="input">
+          <option value="0">— Semua Gudang —</option>
+          for _, g := range p.Gudangs {
+            if g.ID == p.GudangID {
+              <option value={ strconv.FormatInt(g.ID, 10) } selected>{ fmt.Sprintf("%s — %s", g.Kode, g.Nama) }</option>
+            } else {
+              <option value={ strconv.FormatInt(g.ID, 10) }>{ fmt.Sprintf("%s — %s", g.Kode, g.Nama) }</option>
+            }
+          }
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Periode Analisa</label>
+        <select name="lookback" class="input">
+          @lookbackOption(7, p.LookbackDays, "7 hari terakhir")
+          @lookbackOption(30, p.LookbackDays, "30 hari terakhir")
+          @lookbackOption(90, p.LookbackDays, "90 hari terakhir")
+        </select>
+      </div>
+      <button type="submit" class="btn-primary btn-md">Terapkan</button>
+    </form>
+
+    @components.Card(components.CardProps{ NoPad: true }) {
+      if len(p.Rows) == 0 {
+        @components.EmptyState(components.EmptyStateProps{
+          IconName: "package",
+          Title: "Stok aman",
+          Description: "Belum ada produk yang perlu direstock berdasarkan velocity penjualan.",
+        })
+      } else {
+        @reorderTable(p.Rows)
+      }
+    }
+  }
+}
+
+templ lookbackOption(val, current int, label string) {
+  if val == current {
+    <option value={ strconv.Itoa(val) } selected>{ label }</option>
+  } else {
+    <option value={ strconv.Itoa(val) }>{ label }</option>
+  }
+}
+
+templ reorderTable(rows []repo.ProdukVelocity) {
+  <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)]">
+    <table class="min-w-full divide-y divide-slate-200 text-sm">
+      <thead class="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-sm">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Produk</th>
+          <th class="px-4 py-3 text-left font-medium">Gudang</th>
+          <th class="px-4 py-3 text-right font-medium">Stok</th>
+          <th class="px-4 py-3 text-right font-medium">Avg/hari</th>
+          <th class="px-4 py-3 text-right font-medium">Lead time</th>
+          <th class="px-4 py-3 text-right font-medium">Safety</th>
+          <th class="px-4 py-3 text-right font-medium">ROP</th>
+          <th class="px-4 py-3 text-right font-medium">Days Supply</th>
+          <th class="px-4 py-3 text-left font-medium">Status</th>
+          <th class="px-4 py-3 text-left font-medium">Aksi</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 bg-white">
+        for _, r := range rows {
+          <tr>
+            <td class="px-4 py-3 font-medium">{ r.ProdukNama }</td>
+            <td class="px-4 py-3">{ r.GudangKode }</td>
+            <td class="px-4 py-3 text-right tabular-nums font-mono">{ components.FormatNumber(r.StokSekarang) }</td>
+            <td class="px-4 py-3 text-right tabular-nums font-mono">{ components.FormatNumber(r.AvgDailySales) }</td>
+            <td class="px-4 py-3 text-right tabular-nums">{ strconv.Itoa(r.LeadTimeDays) }</td>
+            <td class="px-4 py-3 text-right tabular-nums font-mono">{ components.FormatNumber(r.SafetyStock) }</td>
+            <td class="px-4 py-3 text-right tabular-nums font-mono">{ components.FormatNumber(r.ReorderPoint) }</td>
+            <td class="px-4 py-3 text-right tabular-nums font-mono">{ daysSupplyStr(r.DaysOfSupply) }</td>
+            <td class="px-4 py-3">
+              @components.Badge(reorderLabel(r), reorderVariant(r))
+            </td>
+            <td class="px-4 py-3">
+              <a class="btn-secondary btn-sm"
+                 href={ templ.SafeURL(fmt.Sprintf("/pembelian/baru?produk_id=%d", r.ProdukID)) }>Buat PO</a>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+func daysSupplyStr(d float64) string {
+  if d < 0 {
+    return "∞"
+  }
+  return components.FormatNumber(d)
+}
+
+func reorderLabel(r repo.ProdukVelocity) string {
+  if r.StokSekarang <= 0 {
+    return "Habis"
+  }
+  if r.DaysOfSupply >= 0 && r.DaysOfSupply < float64(r.LeadTimeDays) {
+    return "Sangat Mendesak"
+  }
+  return "Perlu Reorder"
+}
+
+func reorderVariant(r repo.ProdukVelocity) string {
+  if r.StokSekarang <= 0 {
+    return "danger"
+  }
+  if r.DaysOfSupply >= 0 && r.DaysOfSupply < float64(r.LeadTimeDays) {
+    return "danger"
+  }
+  return "warning"
+}

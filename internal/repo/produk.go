@@ -45,11 +45,14 @@ func NewProdukRepo(pool *pgxpool.Pool) *ProdukRepo {
 }
 
 const produkColumns = `id, sku, nama, kategori, satuan_kecil_id, satuan_besar_id,
-	faktor_konversi, stok_minimum, foto_url, is_active, version, deleted_at, created_at, updated_at`
+	faktor_konversi, stok_minimum, foto_url, is_active, lead_time_days, safety_stock,
+	version, deleted_at, created_at, updated_at`
 
 func scanProduk(row pgx.Row, p *domain.Produk) error {
 	return row.Scan(&p.ID, &p.SKU, &p.Nama, &p.Kategori, &p.SatuanKecilID, &p.SatuanBesarID,
-		&p.FaktorKonversi, &p.StokMinimum, &p.FotoURL, &p.IsActive, &p.Version, &p.DeletedAt, &p.CreatedAt, &p.UpdatedAt)
+		&p.FaktorKonversi, &p.StokMinimum, &p.FotoURL, &p.IsActive,
+		&p.LeadTimeDays, &p.SafetyStock,
+		&p.Version, &p.DeletedAt, &p.CreatedAt, &p.UpdatedAt)
 }
 
 // UpdateFotoURL set/clear foto_url tanpa mempengaruhi version (kolom non-bisnis).
@@ -189,12 +192,12 @@ func (r *ProdukRepo) GetBySKU(ctx context.Context, sku string) (*domain.Produk, 
 func (r *ProdukRepo) Create(ctx context.Context, p *domain.Produk) error {
 	const sql = `
 		INSERT INTO produk (sku, nama, kategori, satuan_kecil_id, satuan_besar_id,
-			faktor_konversi, stok_minimum, is_active)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			faktor_konversi, stok_minimum, is_active, lead_time_days, safety_stock)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, created_at, updated_at`
 	row := r.pool.QueryRow(ctx, sql,
 		p.SKU, p.Nama, p.Kategori, p.SatuanKecilID, p.SatuanBesarID,
-		p.FaktorKonversi, p.StokMinimum, p.IsActive)
+		p.FaktorKonversi, p.StokMinimum, p.IsActive, p.LeadTimeDays, p.SafetyStock)
 	if err := row.Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return fmt.Errorf("create produk: %w", err)
 	}
@@ -209,12 +212,14 @@ func (r *ProdukRepo) Update(ctx context.Context, p *domain.Produk) error {
 		const sql = `
 			UPDATE produk SET
 				sku = $2, nama = $3, kategori = $4, satuan_kecil_id = $5, satuan_besar_id = $6,
-				faktor_konversi = $7, stok_minimum = $8, is_active = $9
+				faktor_konversi = $7, stok_minimum = $8, is_active = $9,
+				lead_time_days = $11, safety_stock = $12
 			WHERE id = $1 AND deleted_at IS NULL AND version = $10
 			RETURNING updated_at, version`
 		row := r.pool.QueryRow(ctx, sql,
 			p.ID, p.SKU, p.Nama, p.Kategori, p.SatuanKecilID, p.SatuanBesarID,
-			p.FaktorKonversi, p.StokMinimum, p.IsActive, p.Version)
+			p.FaktorKonversi, p.StokMinimum, p.IsActive, p.Version,
+			p.LeadTimeDays, p.SafetyStock)
 		if err := row.Scan(&p.UpdatedAt, &p.Version); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				// Bedakan: row hilang vs version mismatch. Cek eksistensi.
@@ -233,12 +238,14 @@ func (r *ProdukRepo) Update(ctx context.Context, p *domain.Produk) error {
 	const sql = `
 		UPDATE produk SET
 			sku = $2, nama = $3, kategori = $4, satuan_kecil_id = $5, satuan_besar_id = $6,
-			faktor_konversi = $7, stok_minimum = $8, is_active = $9
+			faktor_konversi = $7, stok_minimum = $8, is_active = $9,
+			lead_time_days = $10, safety_stock = $11
 		WHERE id = $1 AND deleted_at IS NULL
 		RETURNING updated_at, version`
 	row := r.pool.QueryRow(ctx, sql,
 		p.ID, p.SKU, p.Nama, p.Kategori, p.SatuanKecilID, p.SatuanBesarID,
-		p.FaktorKonversi, p.StokMinimum, p.IsActive)
+		p.FaktorKonversi, p.StokMinimum, p.IsActive,
+		p.LeadTimeDays, p.SafetyStock)
 	if err := row.Scan(&p.UpdatedAt, &p.Version); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.ErrProdukNotFound

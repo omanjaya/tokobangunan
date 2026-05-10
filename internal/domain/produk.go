@@ -34,6 +34,8 @@ type Produk struct {
 	StokMinimum    float64
 	FotoURL        *string
 	IsActive       bool
+	LeadTimeDays   int
+	SafetyStock    float64
 	Version        int64
 	DeletedAt      *time.Time
 	CreatedAt      time.Time

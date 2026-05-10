@@ -72,6 +72,16 @@ type TopProdukProps struct {
 	Rows []repo.TopProduk
 }
 
+// ReorderProps - laporan inventory forecasting / reorder point.
+type ReorderProps struct {
+	Nav          layout.NavData
+	User         layout.UserData
+	GudangID     int64
+	LookbackDays int
+	Rows         []repo.ProdukVelocity
+	Gudangs      []GudangLite
+}
+
 // CashflowProps - laporan cashflow periode.
 type CashflowProps struct {
 	Nav      layout.NavData

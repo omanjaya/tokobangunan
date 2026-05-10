@@ -394,6 +394,8 @@ func produkToInput(p *domain.Produk) dto.ProdukUpdateInput {
 		FaktorKonversi: p.FaktorKonversi,
 		StokMinimum:    p.StokMinimum,
 		IsActive:       p.IsActive,
+		LeadTimeDays:   p.LeadTimeDays,
+		SafetyStock:    p.SafetyStock,
 		Version:        p.Version,
 	}
 	if p.Kategori != nil {

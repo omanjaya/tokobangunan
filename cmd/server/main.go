@@ -402,7 +402,10 @@ func newEcho(cfg *config.Config, logger *slog.Logger, pool *pgxpool.Pool) *echo.
 	handler.RegisterCashflowRoutes(app, cashflowH)
 	laporanHandler.SetCashflow(cashflowSvc)
 
-	handler.RegisterLaporanRoutes(app, laporanHandler)
+	forecastRepo := repo.NewForecastRepo(pool)
+	forecastSvc := service.NewForecastService(forecastRepo)
+	forecastHandler := handler.NewForecastHandler(forecastSvc, service.NewGudangService(gudangRepo))
+	handler.RegisterLaporanRoutes(app, laporanHandler, forecastHandler)
 
 	// Share PDF + Portal mitra (mixed: app group + public)
 	shareDeps := handler.BuildShareDeps(pool, appSettingSvc, cfg.SessionSecret, piutangSvc, mitraRepo, gudangRepo)
