@@ -42,3 +42,9 @@ web/static/uploads/*
 !web/static/uploads/
 !web/static/uploads/**/.gitkeep
 !web/static/uploads/produk/
+
+# Backup artifacts (jangan commit dump berisi data customer)
+/backups/
+*.dump
+*.dump.gz
+*.dump.gz.gpg
