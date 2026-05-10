@@ -85,6 +85,20 @@ const maxBodyBytes = 64 * 1024
 func AuditLog(svc *service.AuditLogService, pool *pgxpool.Pool) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			// Inject AuditMeta ke ctx UNCONDITIONALLY (juga untuk GET, juga untuk
+			// path service-covered) supaya service-level audit calls bisa pakai
+			// IP/UA/RequestID tanpa thread Echo context manual.
+			meta := service.AuditMeta{
+				IP:        c.RealIP(),
+				UserAgent: c.Request().UserAgent(),
+				RequestID: extractRequestID(c),
+			}
+			if u := auth.CurrentUser(c); u != nil {
+				meta.UserID = u.ID
+			}
+			ctx := service.WithAuditMeta(c.Request().Context(), meta)
+			c.SetRequest(c.Request().WithContext(ctx))
+
 			method := c.Request().Method
 			if !isMutation(method) {
 				return next(c)
@@ -159,6 +173,7 @@ func AuditLog(svc *service.AuditLogService, pool *pgxpool.Pool) echo.MiddlewareF
 				After:     payload,
 				IP:        c.RealIP(),
 				UserAgent: c.Request().UserAgent(),
+				RequestID: extractRequestID(c),
 			}
 			if len(beforeRaw) > 0 {
 				entry.Before = beforeRaw
@@ -169,6 +184,15 @@ func AuditLog(svc *service.AuditLogService, pool *pgxpool.Pool) echo.MiddlewareF
 			return err
 		}
 	}
+}
+
+// extractRequestID ambil dari response header (set echomw.RequestID) atau
+// fallback ke request header X-Request-Id.
+func extractRequestID(c echo.Context) string {
+	if v := c.Response().Header().Get(echo.HeaderXRequestID); v != "" {
+		return v
+	}
+	return c.Request().Header.Get(echo.HeaderXRequestID)
 }
 
 func isMutation(m string) bool {

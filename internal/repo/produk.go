@@ -128,6 +128,8 @@ func (r *ProdukRepo) List(ctx context.Context, f ListProdukFilter) ([]domain.Pro
 }
 
 // Search via trigram similarity (untuk autocomplete picker).
+// Note: idx_produk_nama_trgm di-drop di migration 0047 (dataset kecil ~500 rows,
+// seq scan < 5ms). Restore index kalau produk > 10K rows.
 func (r *ProdukRepo) Search(ctx context.Context, q string, limit int) ([]domain.Produk, error) {
 	q = strings.TrimSpace(q)
 	if q == "" {

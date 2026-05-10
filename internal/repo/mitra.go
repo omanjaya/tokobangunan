@@ -115,9 +115,10 @@ func (r *MitraRepo) Search(ctx context.Context, query string, limit int) ([]doma
 	if q == "" {
 		return []domain.Mitra{}, nil
 	}
-	// Trigram (`%`) operator pakai gin idx_mitra_nama_trgm / idx_mitra_kode_trgm.
-	// ILIKE fallback dipertahankan supaya prefix pendek (1-2 char) tetap match
-	// walau di bawah pg_trgm.similarity_threshold (default 0.3).
+	// Trigram (`%`) operator: gin idx_mitra_nama_trgm/idx_mitra_kode_trgm di-drop
+	// di migration 0047 (dataset ~800 rows, seq scan < 5ms). ILIKE fallback
+	// dipertahankan supaya prefix pendek (1-2 char) tetap match walau di bawah
+	// pg_trgm.similarity_threshold (default 0.3). Restore index kalau mitra > 10K rows.
 	sql := fmt.Sprintf(`SELECT %s FROM mitra
 		WHERE deleted_at IS NULL AND is_active = TRUE
 		  AND (nama %% $2 OR kode %% $2 OR nama ILIKE $1 OR kode ILIKE $1)

@@ -29,6 +29,7 @@ type AuditLog struct {
 	PayloadAfter  *json.RawMessage
 	IP            string
 	UserAgent     string
+	RequestID     *string
 	CreatedAt     time.Time
 }
 

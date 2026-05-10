@@ -50,20 +50,21 @@ func NewAuditLogRepo(pool *pgxpool.Pool) *AuditLogRepo {
 const auditSelectColumns = `a.id, a.user_id, COALESCE(u.username, '') AS uname,
 	COALESCE(u.nama_lengkap, '') AS unama,
 	a.aksi, a.tabel, a.record_id, a.payload_before, a.payload_after,
-	COALESCE(host(a.ip), '') AS ip, COALESCE(a.user_agent, '') AS ua, a.created_at`
+	COALESCE(host(a.ip), '') AS ip, COALESCE(a.user_agent, '') AS ua,
+	a.request_id, a.created_at`
 
 func scanAuditLog(row pgx.Row, l *domain.AuditLog) error {
 	return row.Scan(&l.ID, &l.UserID, &l.UserUsername, &l.UserNama,
 		&l.Aksi, &l.Tabel, &l.RecordID, &l.PayloadBefore, &l.PayloadAfter,
-		&l.IP, &l.UserAgent, &l.CreatedAt)
+		&l.IP, &l.UserAgent, &l.RequestID, &l.CreatedAt)
 }
 
 // Create insert log baru. Dipakai service.AuditLogService.Record. Untuk Fase 1
 // belum auto-wired ke handler lain.
 func (r *AuditLogRepo) Create(ctx context.Context, l *domain.AuditLog) error {
 	const sql = `
-		INSERT INTO audit_log (user_id, aksi, tabel, record_id, payload_before, payload_after, ip, user_agent)
-		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, '')::inet, $8)
+		INSERT INTO audit_log (user_id, aksi, tabel, record_id, payload_before, payload_after, ip, user_agent, request_id)
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, '')::inet, $8, $9)
 		RETURNING id, created_at`
 	var before, after []byte
 	if l.PayloadBefore != nil {
@@ -72,10 +73,14 @@ func (r *AuditLogRepo) Create(ctx context.Context, l *domain.AuditLog) error {
 	if l.PayloadAfter != nil {
 		after = []byte(*l.PayloadAfter)
 	}
+	var reqID any
+	if l.RequestID != nil && *l.RequestID != "" {
+		reqID = *l.RequestID
+	}
 	row := r.pool.QueryRow(ctx, sql,
 		l.UserID, l.Aksi, l.Tabel, l.RecordID,
 		nullableJSON(before), nullableJSON(after),
-		l.IP, nullableString(l.UserAgent),
+		l.IP, nullableString(l.UserAgent), reqID,
 	)
 	if err := row.Scan(&l.ID, &l.CreatedAt); err != nil {
 		return fmt.Errorf("create audit log: %w", err)

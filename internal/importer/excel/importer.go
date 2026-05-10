@@ -76,6 +76,14 @@ type ImportSummary struct {
 type Importer struct {
 	pool   *pgxpool.Pool
 	logger *slog.Logger
+
+	// Run-scoped state (set di awal Run, dipakai per-step methods).
+	opts      ImportOptions
+	userID    int64
+	produkMap map[string]int64
+	mitraMap  map[string]int64
+	gudangMap map[string]int64
+	satuanMap map[string]int64
 }
 
 // NewImporter constructor.
@@ -137,167 +145,23 @@ func (im *Importer) Run(ctx context.Context, opts ImportOptions) (*ImportSummary
 		return nil, fmt.Errorf("load satuan: %w", err)
 	}
 
+	// Simpan state run-scoped agar per-step methods bisa pakai.
+	im.opts = opts
+	im.userID = userID
+	im.produkMap = produkMap
+	im.mitraMap = mitraMap
+	im.gudangMap = gudangMap
+	im.satuanMap = satuanMap
+
 	// Pilih file mitra yang dipakai (skip SAYAN(1) sesuai pilihan).
 	for _, f := range report.Files {
-		up := strings.ToUpper(f.Name)
-		if !strings.Contains(up, "MITRA USAHA") {
-			continue
+		if err := im.processMitraFile(ctx, f, summary); err != nil {
+			return summary, err
 		}
-		isSayanAlt := strings.Contains(up, "SAYAN") && strings.Contains(up, "(1)")
-		isSayanMain := strings.Contains(up, "SAYAN") && !strings.Contains(up, "(1)")
-		if opts.SayanChoice == SayanCurrent && isSayanAlt {
-			im.logger.Info("skip file (SAYAN choice)", "file", f.Name)
-			continue
-		}
-		if opts.SayanChoice == SayanAlt && isSayanMain {
-			im.logger.Info("skip file (SAYAN choice)", "file", f.Name)
-			continue
-		}
-		gudangKode := detectCabang(f.Name)
-		gudangID, ok := gudangMap[gudangKode]
-		if !ok {
-			summary.Errors = append(summary.Errors, ImportError{
-				Step: "resolve_gudang", File: f.Name,
-				Message: fmt.Sprintf("gudang %s tidak ditemukan di DB", gudangKode),
-			})
-			continue
-		}
-
-		wb, err := OpenWorkbook(f.Path)
-		if err != nil {
-			summary.Errors = append(summary.Errors, ImportError{
-				Step: "open", File: f.Name, Message: err.Error(),
-			})
-			continue
-		}
-
-		// 1. Penjualan dari MAIN (master transaction log).
-		if hasSheet(wb.Sheets(), "MAIN") {
-			pjr, anoms, err := ParseMitraMain(wb, "MAIN", gudangKode)
-			if err != nil {
-				summary.Errors = append(summary.Errors, ImportError{
-					Step: "parse_main", File: f.Name, Message: err.Error(),
-				})
-			}
-			for _, a := range anoms {
-				summary.Errors = append(summary.Errors, ImportError{
-					Step: "parse_main", File: a.File, Sheet: a.Sheet, RowIdx: a.RowIdx, Message: a.Reason,
-				})
-			}
-			im.logger.Info("parse MAIN selesai", "gudang", gudangKode, "rows_terbaca", len(pjr))
-			n, err := im.ImportPenjualan(ctx, opts, gudangID, userID, pjr, produkMap, mitraMap, satuanMap)
-			if err != nil {
-				return summary, fmt.Errorf("import penjualan %s: %w", gudangKode, err)
-			}
-			summary.PenjualanDiimport += n
-			im.logger.Info("import penjualan selesai", "gudang", gudangKode, "rows", n)
-		}
-
-		// 2. Pembayaran.
-		if hasSheet(wb.Sheets(), "Pembayaran") {
-			pbr, anoms, err := ParsePembayaran(wb, "Pembayaran", gudangKode)
-			if err == nil {
-				n, err := im.ImportPembayaran(ctx, opts, userID, pbr, mitraMap)
-				if err != nil {
-					return summary, fmt.Errorf("import pembayaran %s: %w", gudangKode, err)
-				}
-				summary.PembayaranDiimport += n
-				im.logger.Info("import pembayaran selesai", "gudang", gudangKode, "rows", n)
-			}
-			for _, a := range anoms {
-				summary.Errors = append(summary.Errors, ImportError{
-					Step: "parse_pembayaran", File: a.File, Sheet: a.Sheet, RowIdx: a.RowIdx, Message: a.Reason,
-				})
-			}
-		}
-
-		// 3. Piutang opening.
-		if hasSheet(wb.Sheets(), "PIUTANG") {
-			pt, _ := ParsePiutang(wb, "PIUTANG", gudangKode, opts.OpeningDate)
-			n, err := im.ImportPiutangOpening(ctx, opts, gudangID, userID, pt, mitraMap)
-			if err != nil {
-				return summary, fmt.Errorf("import piutang %s: %w", gudangKode, err)
-			}
-			summary.PiutangDiimport += n
-			im.logger.Info("import piutang opening selesai", "gudang", gudangKode, "rows", n)
-		}
-
-		// 4. Stok awal.
-		if hasSheet(wb.Sheets(), "Stok Gudang") {
-			st, _ := ParseStokGudang(wb, "Stok Gudang", gudangKode)
-			n, err := im.ImportStok(ctx, opts, gudangID, st, produkMap)
-			if err != nil {
-				return summary, fmt.Errorf("import stok %s: %w", gudangKode, err)
-			}
-			summary.StokRows += n
-		}
-
-		// 5. Tabungan: setor/tarik tabungan mitra.
-		if hasSheet(wb.Sheets(), "Tabungan") {
-			tb, anoms, err := ParseTabungan(wb, "Tabungan", gudangKode)
-			if err != nil {
-				summary.Errors = append(summary.Errors, ImportError{
-					Step: "parse_tabungan", File: f.Name, Message: err.Error(),
-				})
-			}
-			for _, a := range anoms {
-				summary.Errors = append(summary.Errors, ImportError{
-					Step: "parse_tabungan", File: a.File, Sheet: a.Sheet, RowIdx: a.RowIdx, Message: a.Reason,
-				})
-			}
-			n, err := im.ImportTabungan(ctx, opts, userID, tb, mitraMap)
-			if err != nil {
-				return summary, fmt.Errorf("import tabungan %s: %w", gudangKode, err)
-			}
-			summary.TabunganDiimport += n
-			im.logger.Info("import tabungan selesai", "gudang", gudangKode, "rows", n)
-		}
-
-		// 6. Hutang / Pembelian dari supplier.
-		if hasSheet(wb.Sheets(), "Hutang") {
-			pb, anoms, err := ParseHutang(wb, "Hutang", gudangKode)
-			if err != nil {
-				summary.Errors = append(summary.Errors, ImportError{
-					Step: "parse_hutang", File: f.Name, Message: err.Error(),
-				})
-			}
-			for _, a := range anoms {
-				summary.Errors = append(summary.Errors, ImportError{
-					Step: "parse_hutang", File: a.File, Sheet: a.Sheet, RowIdx: a.RowIdx, Message: a.Reason,
-				})
-			}
-			n, err := im.ImportPembelian(ctx, opts, gudangID, userID, pb, produkMap, satuanMap)
-			if err != nil {
-				return summary, fmt.Errorf("import pembelian %s: %w", gudangKode, err)
-			}
-			summary.PembelianDiimport += n
-			im.logger.Info("import pembelian selesai", "gudang", gudangKode, "rows", n)
-		}
-
-		_ = wb.Close()
 	}
 
-	// 6. Antar Gudang.
-	for _, f := range report.Files {
-		if !strings.EqualFold(f.Name, "Antar Gudang 2025.xlsx") {
-			continue
-		}
-		wb, err := OpenWorkbook(f.Path)
-		if err != nil {
-			summary.Errors = append(summary.Errors, ImportError{
-				Step: "open_antar_gudang", File: f.Name, Message: err.Error(),
-			})
-			continue
-		}
-		mu, _, _ := ParseAntarGudang(wb)
-		n, err := im.ImportMutasi(ctx, opts, userID, mu, produkMap, gudangMap, satuanMap)
-		if err != nil {
-			_ = wb.Close()
-			return summary, fmt.Errorf("import mutasi: %w", err)
-		}
-		summary.MutasiDiimport += n
-		_ = wb.Close()
-		im.logger.Info("import mutasi selesai", "rows", n)
+	if err := im.processAntarGudang(ctx, report, summary); err != nil {
+		return summary, err
 	}
 
 	// Verifikasi.
@@ -311,6 +175,218 @@ func (im *Importer) Run(ctx context.Context, opts ImportOptions) (*ImportSummary
 
 	summary.Duration = time.Since(start)
 	return summary, nil
+}
+
+// processMitraFile menangani satu file mitra: open workbook lalu jalankan semua step.
+func (im *Importer) processMitraFile(ctx context.Context, f FileInfo, summary *ImportSummary) error {
+	gudangID, gudangKode, ok := im.resolveGudangFromFile(f, summary)
+	if !ok {
+		return nil
+	}
+	wb, err := OpenWorkbook(f.Path)
+	if err != nil {
+		summary.Errors = append(summary.Errors, ImportError{
+			Step: "open", File: f.Name, Message: err.Error(),
+		})
+		return nil
+	}
+	defer wb.Close()
+
+	steps := []func() error{
+		func() error { return im.processMainPenjualan(ctx, wb, gudangID, gudangKode, f.Name, summary) },
+		func() error { return im.processPembayaran(ctx, wb, gudangKode, summary) },
+		func() error { return im.processPiutangOpening(ctx, wb, gudangID, gudangKode, summary) },
+		func() error { return im.processStokGudang(ctx, wb, gudangID, gudangKode, summary) },
+		func() error { return im.processTabungan(ctx, wb, gudangKode, f.Name, summary) },
+		func() error { return im.processHutang(ctx, wb, gudangID, gudangKode, f.Name, summary) },
+	}
+	for _, step := range steps {
+		if err := step(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// resolveGudangFromFile filter file mitra & resolve gudang ID. Return ok=false untuk skip.
+func (im *Importer) resolveGudangFromFile(f FileInfo, summary *ImportSummary) (int64, string, bool) {
+	up := strings.ToUpper(f.Name)
+	if !strings.Contains(up, "MITRA USAHA") {
+		return 0, "", false
+	}
+	isSayanAlt := strings.Contains(up, "SAYAN") && strings.Contains(up, "(1)")
+	isSayanMain := strings.Contains(up, "SAYAN") && !strings.Contains(up, "(1)")
+	if im.opts.SayanChoice == SayanCurrent && isSayanAlt {
+		im.logger.Info("skip file (SAYAN choice)", "file", f.Name)
+		return 0, "", false
+	}
+	if im.opts.SayanChoice == SayanAlt && isSayanMain {
+		im.logger.Info("skip file (SAYAN choice)", "file", f.Name)
+		return 0, "", false
+	}
+	gudangKode := detectCabang(f.Name)
+	gudangID, ok := im.gudangMap[gudangKode]
+	if !ok {
+		summary.Errors = append(summary.Errors, ImportError{
+			Step: "resolve_gudang", File: f.Name,
+			Message: fmt.Sprintf("gudang %s tidak ditemukan di DB", gudangKode),
+		})
+		return 0, "", false
+	}
+	return gudangID, gudangKode, true
+}
+
+// processMainPenjualan parse MAIN sheet & import penjualan.
+func (im *Importer) processMainPenjualan(ctx context.Context, wb *Workbook, gudangID int64, gudangKode, fileName string, summary *ImportSummary) error {
+	if !hasSheet(wb.Sheets(), "MAIN") {
+		return nil
+	}
+	pjr, anoms, err := ParseMitraMain(wb, "MAIN", gudangKode)
+	if err != nil {
+		summary.Errors = append(summary.Errors, ImportError{
+			Step: "parse_main", File: fileName, Message: err.Error(),
+		})
+	}
+	for _, a := range anoms {
+		summary.Errors = append(summary.Errors, ImportError{
+			Step: "parse_main", File: a.File, Sheet: a.Sheet, RowIdx: a.RowIdx, Message: a.Reason,
+		})
+	}
+	im.logger.Info("parse MAIN selesai", "gudang", gudangKode, "rows_terbaca", len(pjr))
+	n, err := im.ImportPenjualan(ctx, im.opts, gudangID, im.userID, pjr, im.produkMap, im.mitraMap, im.satuanMap)
+	if err != nil {
+		return fmt.Errorf("import penjualan %s: %w", gudangKode, err)
+	}
+	summary.PenjualanDiimport += n
+	im.logger.Info("import penjualan selesai", "gudang", gudangKode, "rows", n)
+	return nil
+}
+
+// processPembayaran parse Pembayaran sheet & import.
+func (im *Importer) processPembayaran(ctx context.Context, wb *Workbook, gudangKode string, summary *ImportSummary) error {
+	if !hasSheet(wb.Sheets(), "Pembayaran") {
+		return nil
+	}
+	pbr, anoms, err := ParsePembayaran(wb, "Pembayaran", gudangKode)
+	if err == nil {
+		n, err := im.ImportPembayaran(ctx, im.opts, im.userID, pbr, im.mitraMap)
+		if err != nil {
+			return fmt.Errorf("import pembayaran %s: %w", gudangKode, err)
+		}
+		summary.PembayaranDiimport += n
+		im.logger.Info("import pembayaran selesai", "gudang", gudangKode, "rows", n)
+	}
+	for _, a := range anoms {
+		summary.Errors = append(summary.Errors, ImportError{
+			Step: "parse_pembayaran", File: a.File, Sheet: a.Sheet, RowIdx: a.RowIdx, Message: a.Reason,
+		})
+	}
+	return nil
+}
+
+// processPiutangOpening parse PIUTANG sheet & import opening balance.
+func (im *Importer) processPiutangOpening(ctx context.Context, wb *Workbook, gudangID int64, gudangKode string, summary *ImportSummary) error {
+	if !hasSheet(wb.Sheets(), "PIUTANG") {
+		return nil
+	}
+	pt, _ := ParsePiutang(wb, "PIUTANG", gudangKode, im.opts.OpeningDate)
+	n, err := im.ImportPiutangOpening(ctx, im.opts, gudangID, im.userID, pt, im.mitraMap)
+	if err != nil {
+		return fmt.Errorf("import piutang %s: %w", gudangKode, err)
+	}
+	summary.PiutangDiimport += n
+	im.logger.Info("import piutang opening selesai", "gudang", gudangKode, "rows", n)
+	return nil
+}
+
+// processStokGudang parse Stok Gudang sheet & import.
+func (im *Importer) processStokGudang(ctx context.Context, wb *Workbook, gudangID int64, gudangKode string, summary *ImportSummary) error {
+	if !hasSheet(wb.Sheets(), "Stok Gudang") {
+		return nil
+	}
+	st, _ := ParseStokGudang(wb, "Stok Gudang", gudangKode)
+	n, err := im.ImportStok(ctx, im.opts, gudangID, st, im.produkMap)
+	if err != nil {
+		return fmt.Errorf("import stok %s: %w", gudangKode, err)
+	}
+	summary.StokRows += n
+	return nil
+}
+
+// processTabungan parse Tabungan sheet & import.
+func (im *Importer) processTabungan(ctx context.Context, wb *Workbook, gudangKode, fileName string, summary *ImportSummary) error {
+	if !hasSheet(wb.Sheets(), "Tabungan") {
+		return nil
+	}
+	tb, anoms, err := ParseTabungan(wb, "Tabungan", gudangKode)
+	if err != nil {
+		summary.Errors = append(summary.Errors, ImportError{
+			Step: "parse_tabungan", File: fileName, Message: err.Error(),
+		})
+	}
+	for _, a := range anoms {
+		summary.Errors = append(summary.Errors, ImportError{
+			Step: "parse_tabungan", File: a.File, Sheet: a.Sheet, RowIdx: a.RowIdx, Message: a.Reason,
+		})
+	}
+	n, err := im.ImportTabungan(ctx, im.opts, im.userID, tb, im.mitraMap)
+	if err != nil {
+		return fmt.Errorf("import tabungan %s: %w", gudangKode, err)
+	}
+	summary.TabunganDiimport += n
+	im.logger.Info("import tabungan selesai", "gudang", gudangKode, "rows", n)
+	return nil
+}
+
+// processHutang parse Hutang sheet & import pembelian.
+func (im *Importer) processHutang(ctx context.Context, wb *Workbook, gudangID int64, gudangKode, fileName string, summary *ImportSummary) error {
+	if !hasSheet(wb.Sheets(), "Hutang") {
+		return nil
+	}
+	pb, anoms, err := ParseHutang(wb, "Hutang", gudangKode)
+	if err != nil {
+		summary.Errors = append(summary.Errors, ImportError{
+			Step: "parse_hutang", File: fileName, Message: err.Error(),
+		})
+	}
+	for _, a := range anoms {
+		summary.Errors = append(summary.Errors, ImportError{
+			Step: "parse_hutang", File: a.File, Sheet: a.Sheet, RowIdx: a.RowIdx, Message: a.Reason,
+		})
+	}
+	n, err := im.ImportPembelian(ctx, im.opts, gudangID, im.userID, pb, im.produkMap, im.satuanMap)
+	if err != nil {
+		return fmt.Errorf("import pembelian %s: %w", gudangKode, err)
+	}
+	summary.PembelianDiimport += n
+	im.logger.Info("import pembelian selesai", "gudang", gudangKode, "rows", n)
+	return nil
+}
+
+// processAntarGudang parse file Antar Gudang & import mutasi.
+func (im *Importer) processAntarGudang(ctx context.Context, report *AuditReport, summary *ImportSummary) error {
+	for _, f := range report.Files {
+		if !strings.EqualFold(f.Name, "Antar Gudang 2025.xlsx") {
+			continue
+		}
+		wb, err := OpenWorkbook(f.Path)
+		if err != nil {
+			summary.Errors = append(summary.Errors, ImportError{
+				Step: "open_antar_gudang", File: f.Name, Message: err.Error(),
+			})
+			continue
+		}
+		mu, _, _ := ParseAntarGudang(wb)
+		n, err := im.ImportMutasi(ctx, im.opts, im.userID, mu, im.produkMap, im.gudangMap, im.satuanMap)
+		if err != nil {
+			_ = wb.Close()
+			return fmt.Errorf("import mutasi: %w", err)
+		}
+		summary.MutasiDiimport += n
+		_ = wb.Close()
+		im.logger.Info("import mutasi selesai", "rows", n)
+	}
+	return nil
 }
 
 // ensureMigrateUser create user 'migrate' kalau belum ada.

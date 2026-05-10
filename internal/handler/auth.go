@@ -41,6 +41,10 @@ func (h *AuthHandler) recordAuditAuth(c echo.Context, userID int64, aksi string,
 	}
 	payload["ip"] = c.RealIP()
 	payload["user_agent"] = c.Request().UserAgent()
+	reqID := c.Response().Header().Get(echo.HeaderXRequestID)
+	if reqID == "" {
+		reqID = c.Request().Header.Get(echo.HeaderXRequestID)
+	}
 	_ = h.audit.Record(c.Request().Context(), service.RecordEntry{
 		UserID:    uid,
 		Aksi:      aksi,
@@ -49,6 +53,7 @@ func (h *AuthHandler) recordAuditAuth(c echo.Context, userID int64, aksi string,
 		After:     payload,
 		IP:        c.RealIP(),
 		UserAgent: c.Request().UserAgent(),
+		RequestID: reqID,
 	})
 }
 
