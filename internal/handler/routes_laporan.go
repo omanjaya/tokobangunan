@@ -11,6 +11,14 @@ func RegisterLaporanRoutes(g *echo.Group, lh *LaporanHandler, fh *ForecastHandle
 	}
 
 	lap.GET("", lh.Index)
+	lap.GET("/export-all.xlsx", lh.ExportAllXLSX)
+	lap.GET("/preview/lr", lh.PreviewLR)
+	lap.GET("/preview/penjualan", lh.PreviewPenjualan)
+	lap.GET("/preview/mutasi", lh.PreviewMutasi)
+	lap.GET("/preview/cashflow", lh.PreviewCashflow)
+	lap.GET("/preview/top-produk", lh.PreviewTopProduk)
+	lap.GET("/preview/stok-kritis", lh.PreviewStokKritis)
+	lap.GET("/preview/reorder", lh.PreviewReorder)
 	lap.GET("/lr", lh.LR)
 	lap.GET("/penjualan", lh.Penjualan)
 	lap.GET("/penjualan/export.csv", lh.ExportPenjualan)

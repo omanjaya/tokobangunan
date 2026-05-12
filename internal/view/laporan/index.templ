@@ -15,24 +15,58 @@ templ Index(p IndexProps) {
       { Label: "Laporan" },
     },
   }) {
-    @components.PageHeader("Laporan", "Pilih jenis laporan yang ingin ditampilkan.") {}
+    @components.PageHeader("Laporan", "Dashboard ringkas semua laporan. Klik 'Lihat semua' untuk detail.") {
+      <a href="/laporan/export-all.xlsx"
+         class="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium">
+        @icon.Render("download", 16, "")
+        Export Semua (XLSX)
+      </a>
+    }
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      @reportCard("Laba-Rugi", "Ringkasan penjualan vs pembelian per cabang.", "bar-chart-3", "/laporan/lr")
-      @reportCard("Penjualan", "List transaksi penjualan dengan filter dan ekspor CSV.", "shopping-cart", "/laporan/penjualan")
-      @reportCard("Mutasi Stok", "Riwayat perpindahan stok antar gudang.", "truck", "/laporan/mutasi")
-      @reportCard("Stok Kritis", "Produk dengan stok di bawah minimum.", "alert-triangle", "/laporan/stok-kritis")
-      @reportCard("Top Produk", "Produk terlaris berdasarkan omset.", "package", "/laporan/top-produk")
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div hx-get="/laporan/preview/lr"
+           hx-trigger="revealed once delay:100ms"
+           hx-swap="outerHTML">
+        @PreviewSkeleton("Laba-Rugi")
+      </div>
+      <div hx-get="/laporan/preview/penjualan"
+           hx-trigger="revealed once delay:100ms"
+           hx-swap="outerHTML">
+        @PreviewSkeleton("Penjualan")
+      </div>
+      <div hx-get="/laporan/preview/mutasi"
+           hx-trigger="revealed once delay:100ms"
+           hx-swap="outerHTML">
+        @PreviewSkeleton("Mutasi Stok")
+      </div>
+      <div hx-get="/laporan/preview/cashflow"
+           hx-trigger="revealed once delay:100ms"
+           hx-swap="outerHTML">
+        @PreviewSkeleton("Cashflow")
+      </div>
+      <div hx-get="/laporan/preview/top-produk"
+           hx-trigger="revealed once delay:100ms"
+           hx-swap="outerHTML">
+        @PreviewSkeleton("Top Produk")
+      </div>
+      <div hx-get="/laporan/preview/stok-kritis"
+           hx-trigger="revealed once delay:100ms"
+           hx-swap="outerHTML">
+        @PreviewSkeleton("Stok Kritis")
+      </div>
+      <div hx-get="/laporan/preview/reorder"
+           hx-trigger="revealed once delay:100ms"
+           hx-swap="outerHTML">
+        @PreviewSkeleton("Reorder Stok")
+      </div>
       @reportCard("Aging Piutang", "Outstanding piutang per mitra dan umur.", "clock", "/piutang")
-      @reportCard("Cashflow", "Kas masuk vs keluar dan tren harian.", "wallet", "/laporan/cashflow")
-      @reportCard("Reorder Stok", "Forecasting stok berdasarkan velocity penjualan.", "alert-triangle", "/laporan/reorder")
     </div>
   }
 }
 
 templ reportCard(title, desc, iconName, href string) {
   <a href={ templ.SafeURL(href) }
-     class="card p-5 hover:border-brand-300 hover:shadow-sm transition group">
+     class="card p-5 hover:border-brand-300 hover:shadow-sm transition group min-h-[280px] flex flex-col">
     <div class="flex items-start gap-3">
       <span class="shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-lg bg-brand-50 text-brand-600 group-hover:bg-brand-100">
         @icon.Render(iconName, 20, "")

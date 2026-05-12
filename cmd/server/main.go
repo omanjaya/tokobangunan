@@ -407,6 +407,7 @@ func newEcho(cfg *config.Config, logger *slog.Logger, pool *pgxpool.Pool) *echo.
 	forecastRepo := repo.NewForecastRepo(pool)
 	forecastSvc := service.NewForecastService(forecastRepo)
 	forecastHandler := handler.NewForecastHandler(forecastSvc, service.NewGudangService(gudangRepo))
+	laporanHandler.SetForecast(forecastSvc)
 	handler.RegisterLaporanRoutes(app, laporanHandler, forecastHandler)
 
 	// Share PDF + Portal mitra (mixed: app group + public)

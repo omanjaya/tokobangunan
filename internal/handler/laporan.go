@@ -29,6 +29,7 @@ type LaporanHandler struct {
 	laporan  *service.LaporanService
 	gudang   *service.GudangService
 	cashflow *service.CashflowService // optional; nil-safe
+	forecast *service.ForecastService // optional; nil-safe
 }
 
 func NewLaporanHandler(ls *service.LaporanService, gs *service.GudangService) *LaporanHandler {
@@ -39,6 +40,11 @@ func NewLaporanHandler(ls *service.LaporanService, gs *service.GudangService) *L
 // Dipisah supaya constructor lama tidak break.
 func (h *LaporanHandler) SetCashflow(cs *service.CashflowService) {
 	h.cashflow = cs
+}
+
+// SetForecast attach forecast service untuk preview reorder + bulk export.
+func (h *LaporanHandler) SetForecast(fs *service.ForecastService) {
+	h.forecast = fs
 }
 
 // Index GET /laporan - landing page (grid card).
@@ -1069,4 +1075,363 @@ func (h *LaporanHandler) gudangLiteCtx(ctx context.Context) ([]laporan.GudangLit
 		out = append(out, laporan.GudangLite{ID: g.ID, Kode: g.Kode, Nama: g.Nama})
 	}
 	return out, nil
+}
+
+// ===== Preview handlers (lazy-load via htmx) ================================
+
+// previewRange - default 30 hari terakhir (sama dgn parseRange tapi tanpa preset).
+func previewRange(c echo.Context) (time.Time, time.Time) {
+	return parseRange(c)
+}
+
+func previewBase(from, to time.Time) laporan.PreviewProps {
+	return laporan.PreviewProps{
+		From: from.Format("2006-01-02"),
+		To:   to.Format("2006-01-02"),
+	}
+}
+
+// PreviewLR GET /laporan/preview/lr.
+func (h *LaporanHandler) PreviewLR(c echo.Context) error {
+	from, to := previewRange(c)
+	rows, err := h.laporan.LR(c.Request().Context(), from, to)
+	if err != nil {
+		return err
+	}
+	return RenderHTML(c, http.StatusOK, laporan.PreviewLR(laporan.PreviewLRProps{
+		PreviewProps: previewBase(from, to),
+		Rows:         rows,
+	}))
+}
+
+// PreviewPenjualan GET /laporan/preview/penjualan.
+func (h *LaporanHandler) PreviewPenjualan(c echo.Context) error {
+	from, to := previewRange(c)
+	rows, total, err := h.laporan.Penjualan(c.Request().Context(), service.LaporanPenjualanFilter{
+		From: from, To: to, Page: 1, PerPage: 5,
+	})
+	if err != nil {
+		return err
+	}
+	var sum int64
+	// Sum total per page; untuk total periode penuh perlu separate aggregate.
+	// Untuk preview, hitung sum dari halaman pertama sebagai indikatif + count total.
+	for _, r := range rows {
+		sum += r.Total
+	}
+	return RenderHTML(c, http.StatusOK, laporan.PreviewPenjualan(laporan.PreviewPenjualanProps{
+		PreviewProps: previewBase(from, to),
+		Rows:         rows,
+		Total:        sum,
+		Count:        total,
+	}))
+}
+
+// PreviewMutasi GET /laporan/preview/mutasi.
+func (h *LaporanHandler) PreviewMutasi(c echo.Context) error {
+	from, to := previewRange(c)
+	rows, err := h.laporan.Mutasi(c.Request().Context(), service.LaporanMutasiFilter{
+		From: from, To: to,
+	})
+	if err != nil {
+		return err
+	}
+	total := len(rows)
+	if len(rows) > 5 {
+		rows = rows[:5]
+	}
+	return RenderHTML(c, http.StatusOK, laporan.PreviewMutasi(laporan.PreviewMutasiProps{
+		PreviewProps: previewBase(from, to),
+		Rows:         rows,
+		Count:        total,
+	}))
+}
+
+// PreviewCashflow GET /laporan/preview/cashflow.
+func (h *LaporanHandler) PreviewCashflow(c echo.Context) error {
+	from, to := previewRange(c)
+	if h.cashflow == nil {
+		return RenderHTML(c, http.StatusOK, laporan.PreviewCashflow(laporan.PreviewCashflowProps{
+			PreviewProps: previewBase(from, to),
+			HasModul:     false,
+		}))
+	}
+	summary, err := h.cashflow.Summary(c.Request().Context(), from, to, nil)
+	if err != nil {
+		return err
+	}
+	return RenderHTML(c, http.StatusOK, laporan.PreviewCashflow(laporan.PreviewCashflowProps{
+		PreviewProps: previewBase(from, to),
+		Summary:      summary,
+		HasModul:     true,
+	}))
+}
+
+// PreviewTopProduk GET /laporan/preview/top-produk.
+func (h *LaporanHandler) PreviewTopProduk(c echo.Context) error {
+	from, to := previewRange(c)
+	rows, err := h.laporan.TopProduk(c.Request().Context(), from, to, 5)
+	if err != nil {
+		return err
+	}
+	return RenderHTML(c, http.StatusOK, laporan.PreviewTopProduk(laporan.PreviewTopProdukProps{
+		PreviewProps: previewBase(from, to),
+		Rows:         rows,
+	}))
+}
+
+// PreviewStokKritis GET /laporan/preview/stok-kritis.
+func (h *LaporanHandler) PreviewStokKritis(c echo.Context) error {
+	from, to := previewRange(c)
+	rows, err := h.laporan.StokKritis(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	total := len(rows)
+	if len(rows) > 5 {
+		rows = rows[:5]
+	}
+	return RenderHTML(c, http.StatusOK, laporan.PreviewStokKritis(laporan.PreviewStokKritisProps{
+		PreviewProps: previewBase(from, to),
+		Rows:         rows,
+		Count:        total,
+	}))
+}
+
+// PreviewReorder GET /laporan/preview/reorder.
+func (h *LaporanHandler) PreviewReorder(c echo.Context) error {
+	from, to := previewRange(c)
+	if h.forecast == nil {
+		return RenderHTML(c, http.StatusOK, laporan.PreviewReorder(laporan.PreviewReorderProps{
+			PreviewProps: previewBase(from, to),
+		}))
+	}
+	rows, err := h.forecast.Velocity(c.Request().Context(), 30, nil)
+	if err != nil {
+		return err
+	}
+	total := len(rows)
+	if len(rows) > 5 {
+		rows = rows[:5]
+	}
+	return RenderHTML(c, http.StatusOK, laporan.PreviewReorder(laporan.PreviewReorderProps{
+		PreviewProps: previewBase(from, to),
+		Rows:         rows,
+		Count:        total,
+	}))
+}
+
+// ===== Bulk export — semua laporan dalam 1 XLSX multi-sheet =================
+
+// ExportAllXLSX GET /laporan/export-all.xlsx
+// Filter periode via ?from=&to= (default 30 hari).
+func (h *LaporanHandler) ExportAllXLSX(c echo.Context) error {
+	from, to := parseRange(c)
+	ctx := c.Request().Context()
+
+	f := excelize.NewFile()
+	defer func() { _ = f.Close() }()
+
+	headerStyle, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"E5E7EB"}, Pattern: 1},
+		Alignment: &excelize.Alignment{Horizontal: "center"},
+	})
+
+	addSheet := func(name string, headers []string, widths []float64) {
+		_, _ = f.NewSheet(name)
+		for i, hd := range headers {
+			cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+			_ = f.SetCellValue(name, cell, hd)
+		}
+		firstCell, _ := excelize.CoordinatesToCellName(1, 1)
+		lastCell, _ := excelize.CoordinatesToCellName(len(headers), 1)
+		_ = f.SetCellStyle(name, firstCell, lastCell, headerStyle)
+		for i, w := range widths {
+			col, _ := excelize.ColumnNumberToName(i + 1)
+			_ = f.SetColWidth(name, col, col, w)
+		}
+	}
+
+	// --- Sheet: LR ---
+	if rows, err := h.laporan.LR(ctx, from, to); err == nil {
+		sheet := "LR"
+		addSheet(sheet, []string{"Gudang", "Penjualan", "HPP", "Laba Kotor", "Beban Operasional", "Laba Bersih"},
+			[]float64{24, 16, 16, 16, 18, 16})
+		for i, r := range rows {
+			row := i + 2
+			_ = f.SetCellValue(sheet, fmt.Sprintf("A%d", row), r.GudangNama)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("B%d", row), r.Penjualan/100)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("C%d", row), r.Pembelian/100)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("D%d", row), r.GrossProfit/100)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("E%d", row), r.BiayaOperasional/100)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("F%d", row), r.NetIncome/100)
+		}
+	}
+
+	// --- Sheet: Penjualan ---
+	{
+		penjFilter := service.LaporanPenjualanFilter{From: from, To: to, Page: 1, PerPage: 500}
+		all := make([]repo.LaporanPenjualanRow, 0, 256)
+		for {
+			rows, total, err := h.laporan.Penjualan(ctx, penjFilter)
+			if err != nil {
+				break
+			}
+			all = append(all, rows...)
+			if penjFilter.Page*penjFilter.PerPage >= total || len(rows) == 0 {
+				break
+			}
+			penjFilter.Page++
+		}
+		sheet := "Penjualan"
+		addSheet(sheet, []string{"Tanggal", "Nomor Kwitansi", "Gudang", "Mitra", "Total", "Status"},
+			[]float64{12, 22, 18, 28, 14, 10})
+		for i, r := range all {
+			row := i + 2
+			_ = f.SetCellValue(sheet, fmt.Sprintf("A%d", row), r.Tanggal.Format("2006-01-02"))
+			_ = f.SetCellValue(sheet, fmt.Sprintf("B%d", row), r.NomorKwitansi)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("C%d", row), r.GudangNama)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("D%d", row), r.MitraNama)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("E%d", row), r.Total/100)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("F%d", row), r.StatusBayar)
+		}
+	}
+
+	// --- Sheet: Mutasi ---
+	if rows, err := h.laporan.Mutasi(ctx, service.LaporanMutasiFilter{From: from, To: to}); err == nil {
+		sheet := "Mutasi"
+		addSheet(sheet, []string{"Tanggal", "Nomor", "Asal", "Tujuan", "Jumlah Item", "Total Nilai", "Status"},
+			[]float64{12, 22, 24, 24, 12, 14, 14})
+		for i, r := range rows {
+			row := i + 2
+			_ = f.SetCellValue(sheet, fmt.Sprintf("A%d", row), r.Tanggal.Format("2006-01-02"))
+			_ = f.SetCellValue(sheet, fmt.Sprintf("B%d", row), r.NomorMutasi)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("C%d", row), r.GudangAsal)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("D%d", row), r.GudangTujuan)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("E%d", row), r.JumlahItem)
+			nilai := int64(0)
+			if r.TotalNilai != nil {
+				nilai = *r.TotalNilai
+			}
+			_ = f.SetCellValue(sheet, fmt.Sprintf("F%d", row), nilai/100)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("G%d", row), r.Status)
+		}
+	}
+
+	// --- Sheet: Cashflow ---
+	if h.cashflow != nil {
+		all := make([]domain.Cashflow, 0, 256)
+		page := 1
+		for {
+			res, err := h.cashflow.List(ctx, repo.ListCashflowFilter{
+				From: &from, To: &to, Page: page, PerPage: 200,
+			})
+			if err != nil {
+				break
+			}
+			all = append(all, res.Items...)
+			if page*200 >= res.Total || len(res.Items) == 0 {
+				break
+			}
+			page++
+		}
+		sheet := "Cashflow"
+		addSheet(sheet, []string{"Tanggal", "Kategori", "Tipe", "Deskripsi", "Masuk", "Keluar", "Saldo"},
+			[]float64{12, 22, 10, 36, 14, 14, 16})
+		var saldo int64
+		for i, it := range all {
+			row := i + 2
+			var masuk, keluar int64
+			if it.Tipe == domain.CashflowMasuk {
+				masuk = it.Jumlah
+				saldo += it.Jumlah
+			} else {
+				keluar = it.Jumlah
+				saldo -= it.Jumlah
+			}
+			_ = f.SetCellValue(sheet, fmt.Sprintf("A%d", row), it.Tanggal.Format("2006-01-02"))
+			_ = f.SetCellValue(sheet, fmt.Sprintf("B%d", row), it.Kategori)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("C%d", row), string(it.Tipe))
+			_ = f.SetCellValue(sheet, fmt.Sprintf("D%d", row), it.Deskripsi)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("E%d", row), masuk/100)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("F%d", row), keluar/100)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("G%d", row), saldo/100)
+		}
+	}
+
+	// --- Sheet: Top Produk ---
+	if rows, err := h.laporan.TopProduk(ctx, from, to, 50); err == nil {
+		sheet := "Top Produk"
+		addSheet(sheet, []string{"Rank", "Produk", "Qty Terjual", "Total Nilai"},
+			[]float64{6, 40, 14, 18})
+		for i, r := range rows {
+			row := i + 2
+			_ = f.SetCellValue(sheet, fmt.Sprintf("A%d", row), i+1)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("B%d", row), r.ProdukNama)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("C%d", row), r.QtyTotal)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("D%d", row), r.Total/100)
+		}
+	}
+
+	// --- Sheet: Stok Kritis ---
+	if rows, err := h.laporan.StokKritis(ctx); err == nil {
+		sheet := "Stok Kritis"
+		addSheet(sheet, []string{"Produk", "Gudang", "Stok", "Min", "Selisih", "Satuan"},
+			[]float64{36, 24, 12, 12, 12, 10})
+		for i, r := range rows {
+			row := i + 2
+			_ = f.SetCellValue(sheet, fmt.Sprintf("A%d", row), r.ProdukNama)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("B%d", row), r.GudangNama)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("C%d", row), r.Qty)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("D%d", row), r.StokMinimum)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("E%d", row), r.Qty-r.StokMinimum)
+			_ = f.SetCellValue(sheet, fmt.Sprintf("F%d", row), r.SatuanKode)
+		}
+	}
+
+	// --- Sheet: Reorder ---
+	if h.forecast != nil {
+		if rows, err := h.forecast.Velocity(ctx, 30, nil); err == nil {
+			sheet := "Reorder"
+			addSheet(sheet, []string{"Produk", "Gudang", "Stok", "Avg Daily Sales", "Reorder Point", "Days of Supply", "Need Reorder"},
+				[]float64{36, 20, 12, 16, 16, 16, 14})
+			for i, r := range rows {
+				row := i + 2
+				_ = f.SetCellValue(sheet, fmt.Sprintf("A%d", row), r.ProdukNama)
+				_ = f.SetCellValue(sheet, fmt.Sprintf("B%d", row), r.GudangNama)
+				_ = f.SetCellValue(sheet, fmt.Sprintf("C%d", row), r.StokSekarang)
+				_ = f.SetCellValue(sheet, fmt.Sprintf("D%d", row), r.AvgDailySales)
+				_ = f.SetCellValue(sheet, fmt.Sprintf("E%d", row), r.ReorderPoint)
+				if r.DaysOfSupply < 0 {
+					_ = f.SetCellValue(sheet, fmt.Sprintf("F%d", row), "∞")
+				} else {
+					_ = f.SetCellValue(sheet, fmt.Sprintf("F%d", row), r.DaysOfSupply)
+				}
+				if r.NeedReorder {
+					_ = f.SetCellValue(sheet, fmt.Sprintf("G%d", row), "YA")
+				} else {
+					_ = f.SetCellValue(sheet, fmt.Sprintf("G%d", row), "tidak")
+				}
+			}
+		}
+	}
+
+	// Drop default sheet.
+	_ = f.DeleteSheet("Sheet1")
+	// Activate first sheet (LR).
+	if idx, err := f.GetSheetIndex("LR"); err == nil && idx >= 0 {
+		f.SetActiveSheet(idx)
+	}
+
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		return err
+	}
+	filename := fmt.Sprintf("laporan-all-%s_%s.xlsx",
+		from.Format("20060102"), to.Format("20060102"))
+	c.Response().Header().Set(echo.HeaderContentDisposition,
+		fmt.Sprintf(`attachment; filename="%s"`, filename))
+	return c.Blob(http.StatusOK,
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buf.Bytes())
 }
